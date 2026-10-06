@@ -1,0 +1,332 @@
+:root {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  color: #f7f5f0;
+  background: #090b12;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(111, 88, 255, 0.16), transparent 38rem),
+    #090b12;
+}
+
+button {
+  font: inherit;
+}
+
+.game {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 24px 0 48px;
+}
+
+.game__topbar,
+.command-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.game__topbar {
+  margin-bottom: 16px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+}
+
+h2 {
+  margin-top: 4px;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #a8abc0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.connection-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  color: #c9cbd8;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 0.84rem;
+}
+
+.connection-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e6aa55;
+}
+
+.battlefield {
+  position: relative;
+  display: grid;
+  min-height: 610px;
+  padding: 36px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  background: #141724;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+}
+
+.battlefield__backdrop {
+  position: absolute;
+  inset: 0;
+  opacity: 0.7;
+  background:
+    linear-gradient(to bottom, rgba(8, 11, 22, 0.08), rgba(8, 11, 22, 0.75)),
+    radial-gradient(circle at 50% 35%, rgba(119, 83, 184, 0.42), transparent 35%),
+    linear-gradient(160deg, #1d2939 0%, #263b42 44%, #151723 100%);
+}
+
+.battlefield__backdrop::after {
+  content: "";
+  position: absolute;
+  right: -15%;
+  bottom: -25%;
+  left: -15%;
+  height: 52%;
+  border-radius: 50% 50% 0 0;
+  background: rgba(14, 16, 24, 0.9);
+  transform: perspective(500px) rotateX(55deg);
+}
+
+.formation,
+.battlefield__turn {
+  position: relative;
+  z-index: 1;
+}
+
+.formation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 3vw, 32px);
+}
+
+.formation--enemies {
+  align-self: start;
+}
+
+.formation--heroes {
+  align-self: end;
+}
+
+.battlefield__turn {
+  align-self: center;
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  padding: 8px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(7, 9, 16, 0.58);
+  backdrop-filter: blur(12px);
+}
+
+.battlefield__turn span {
+  color: #a8abc0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.combatant {
+  width: min(220px, 32vw);
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px;
+  color: inherit;
+  background: rgba(10, 12, 20, 0.72);
+  text-align: left;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.combatant:hover {
+  transform: translateY(-3px);
+}
+
+.combatant--selected {
+  border-color: rgba(215, 197, 255, 0.62);
+  box-shadow: 0 0 0 3px rgba(119, 83, 184, 0.18);
+}
+
+.combatant--active {
+  outline: 2px solid rgba(234, 197, 112, 0.75);
+  outline-offset: 3px;
+}
+
+.combatant__portrait {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 10px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 1.6rem;
+}
+
+.combatant > strong {
+  display: block;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.combatant__resources {
+  display: grid;
+  gap: 7px;
+}
+
+.resource__label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  color: #d7d8e0;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.resource__track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.resource__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #d1d3dd;
+  transition: width 260ms ease;
+}
+
+.resource__fill[data-resource="hp"] {
+  background: #d36d79;
+}
+
+.resource__fill[data-resource="mp"] {
+  background: #718de0;
+}
+
+.resource__fill[data-resource="ip"] {
+  background: #d1b56c;
+}
+
+.command-panel {
+  margin-top: 16px;
+  padding: 18px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  background: #11141f;
+}
+
+.command-panel p {
+  max-width: 670px;
+  margin-top: 6px;
+  color: #9da0b2;
+  line-height: 1.45;
+}
+
+.command-panel__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.command-panel__buttons button {
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: #f7f5f0;
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+
+.command-panel__buttons button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.command-panel__buttons button:disabled {
+  color: #6f7280;
+  cursor: not-allowed;
+}
+
+@media (max-width: 720px) {
+  .game {
+    width: min(100% - 20px, 1180px);
+    padding-top: 12px;
+  }
+
+  .game__topbar,
+  .command-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .connection-pill {
+    align-self: flex-start;
+  }
+
+  .battlefield {
+    min-height: 680px;
+    padding: 22px 10px;
+  }
+
+  .formation {
+    gap: 8px;
+  }
+
+  .combatant {
+    width: min(46%, 210px);
+    padding: 9px;
+  }
+
+  .combatant__portrait {
+    width: 48px;
+    height: 48px;
+  }
+
+  .command-panel__buttons {
+    justify-content: stretch;
+  }
+
+  .command-panel__buttons button {
+    flex: 1 1 40%;
+  }
+}
