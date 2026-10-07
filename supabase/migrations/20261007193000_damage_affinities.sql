@@ -19,7 +19,7 @@ alter table public.combatant_attacks
     )
   );
 
-create table public.combatant_affinities (
+create table if not exists public.combatant_affinities (
   combatant_id uuid not null
     references public.combatants(id) on delete cascade,
   damage_type text not null
@@ -55,6 +55,8 @@ grant select, insert, update, delete
   on table public.combatant_affinities
   to authenticated;
 
+drop policy if exists "Room members can read combatant affinities" on public.combatant_affinities;
+
 create policy "Room members can read combatant affinities"
   on public.combatant_affinities
   for select
@@ -69,6 +71,8 @@ create policy "Room members can read combatant affinities"
     )
   );
 
+drop policy if exists "Room hosts can create combatant affinities" on public.combatant_affinities;
+
 create policy "Room hosts can create combatant affinities"
   on public.combatant_affinities
   for insert
@@ -82,6 +86,8 @@ create policy "Room hosts can create combatant affinities"
         and private.is_room_host(battles.room_id)
     )
   );
+
+drop policy if exists "Room hosts can update combatant affinities" on public.combatant_affinities;
 
 create policy "Room hosts can update combatant affinities"
   on public.combatant_affinities
@@ -105,6 +111,8 @@ create policy "Room hosts can update combatant affinities"
         and private.is_room_host(battles.room_id)
     )
   );
+
+drop policy if exists "Room hosts can delete combatant affinities" on public.combatant_affinities;
 
 create policy "Room hosts can delete combatant affinities"
   on public.combatant_affinities
@@ -221,7 +229,9 @@ where name = 'Cavaleiro Rubro'
 on conflict (combatant_id, damage_type)
 do update set affinity = excluded.affinity;
 
-create or replace function public.perform_combatant_attack(
+drop function if exists public.perform_combatant_attack(uuid, uuid);
+
+create function public.perform_combatant_attack(
   p_attack_id uuid,
   p_target_id uuid
 )
