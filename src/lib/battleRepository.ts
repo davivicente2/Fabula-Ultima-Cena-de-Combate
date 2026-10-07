@@ -4,12 +4,15 @@ import type {
   CombatAttack,
   Combatant,
   CombatSide,
+  DamageAffinity,
+  DamageType,
   DieSize,
 } from '../types/combat'
 
 export type CombatAttackSeed = Omit<CombatAttack, 'id'>
-export type CombatantSeed = Omit<Combatant, 'id' | 'attacks'> & {
+export type CombatantSeed = Omit<Combatant, 'id' | 'attacks' | 'affinities'> & {
   attacks: CombatAttackSeed[]
+  affinities: Partial<Record<DamageType, DamageAffinity>>
 }
 
 type CombatantRow = {
@@ -41,8 +44,14 @@ type CombatAttackRow = {
   accuracy_attribute_b: AttributeName
   accuracy_bonus: number
   damage_bonus: number
-  damage_type: string
+  damage_type: DamageType
   sort_order: number
+}
+
+type CombatantAffinityRow = {
+  combatant_id: string
+  damage_type: DamageType
+  affinity: DamageAffinity
 }
 
 type RoomBattleRpcRow = {
@@ -102,7 +111,8 @@ type CombatActionRow = {
   is_critical: boolean | null
   is_fumble: boolean | null
   damage: number | null
-  damage_type: string | null
+  damage_type: DamageType | null
+  damage_affinity: DamageAffinity | 'neutral' | null
   created_at: string
 }
 
@@ -120,6 +130,8 @@ type CombatAttackRpcRow = {
   is_critical: boolean
   is_fumble: boolean
   damage: number
+  damage_type: DamageType
+  damage_affinity: DamageAffinity | 'neutral'
   previous_hp: number
   resulting_hp: number
 }
@@ -164,7 +176,8 @@ export type CombatAction = {
   isCritical: boolean | null
   isFumble: boolean | null
   damage: number | null
-  damageType: string | null
+  damageType: DamageType | null
+  damageAffinity: DamageAffinity | 'neutral' | null
   createdAt: string
 }
 
@@ -188,6 +201,7 @@ async function ensureAnonymousSession() {
 function toCombatant(
   row: CombatantRow,
   attacks: CombatAttack[] = [],
+  affinities: Partial<Record<DamageType, DamageAffinity>> = {},
 ): Combatant {
   return {
     id: row.id,
@@ -206,6 +220,7 @@ function toCombatant(
     defense: row.defense,
     magicDefense: row.magic_defense,
     attacks,
+    affinities,
     isActive: row.is_active,
     controllerUserId: row.controller_user_id,
   }
@@ -249,6 +264,7 @@ function toCombatAction(row: CombatActionRow): CombatAction {
     isFumble: row.is_fumble,
     damage: row.damage,
     damageType: row.damage_type,
+    damageAffinity: row.damage_affinity,
     createdAt: row.created_at,
   }
 }
@@ -267,29 +283,47 @@ async function loadCombatants(battleId: string) {
   const rows = data as CombatantRow[]
   if (rows.length === 0) return []
 
-  const { data: attackData, error: attackError } = await supabase
-    .from('combatant_attacks')
-    .select(
-      'id, combatant_id, name, accuracy_attribute_a, accuracy_attribute_b, accuracy_bonus, damage_bonus, damage_type, sort_order',
-    )
-    .in(
-      'combatant_id',
-      rows.map((row) => row.id),
-    )
-    .order('sort_order', { ascending: true })
+  const combatantIds = rows.map((row) => row.id)
 
-  if (attackError) throw attackError
+  const [attacksResult, affinitiesResult] = await Promise.all([
+    supabase
+      .from('combatant_attacks')
+      .select(
+        'id, combatant_id, name, accuracy_attribute_a, accuracy_attribute_b, accuracy_bonus, damage_bonus, damage_type, sort_order',
+      )
+      .in('combatant_id', combatantIds)
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('combatant_affinities')
+      .select('combatant_id, damage_type, affinity')
+      .in('combatant_id', combatantIds),
+  ])
 
-  const attacks = attackData as CombatAttackRow[]
+  if (attacksResult.error) throw attacksResult.error
+  if (affinitiesResult.error) throw affinitiesResult.error
 
-  return rows.map((row) =>
-    toCombatant(
+  const attacks = attacksResult.data as CombatAttackRow[]
+  const affinities = affinitiesResult.data as CombatantAffinityRow[]
+
+  return rows.map((row) => {
+    const combatantAffinities = affinities
+      .filter((affinity) => affinity.combatant_id === row.id)
+      .reduce<Partial<Record<DamageType, DamageAffinity>>>(
+        (current, affinity) => ({
+          ...current,
+          [affinity.damage_type]: affinity.affinity,
+        }),
+        {},
+      )
+
+    return toCombatant(
       row,
       attacks
         .filter((attack) => attack.combatant_id === row.id)
         .map(toCombatAttack),
-    ),
-  )
+      combatantAffinities,
+    )
+  })
 }
 
 async function seedCombatants(battleId: string, seeds: CombatantSeed[]) {
@@ -335,13 +369,30 @@ async function seedCombatants(battleId: string, seeds: CombatantSeed[]) {
     }))
   })
 
-  if (attackRows.length === 0) return
+  if (attackRows.length > 0) {
+    const { error: attackError } = await supabase
+      .from('combatant_attacks')
+      .insert(attackRows)
 
-  const { error: attackError } = await supabase
-    .from('combatant_attacks')
-    .insert(attackRows)
+    if (attackError) throw attackError
+  }
 
-  if (attackError) throw attackError
+  const affinityRows = inserted.flatMap((row) => {
+    const seed = seeds[row.sort_order]
+    return Object.entries(seed.affinities).map(([damageType, affinity]) => ({
+      combatant_id: row.id,
+      damage_type: damageType as DamageType,
+      affinity,
+    }))
+  })
+
+  if (affinityRows.length > 0) {
+    const { error: affinityError } = await supabase
+      .from('combatant_affinities')
+      .insert(affinityRows)
+
+    if (affinityError) throw affinityError
+  }
 }
 
 async function getRoomCode(roomId: string) {
@@ -549,7 +600,7 @@ export async function loadCombatActions(
   const { data, error } = await supabase
     .from('combat_actions')
     .select(
-      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, created_at',
+      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, created_at',
     )
     .eq('battle_id', battleId)
     .order('created_at', { ascending: false })
@@ -589,6 +640,8 @@ export async function performCombatantAttack(
     isCritical: row.is_critical,
     isFumble: row.is_fumble,
     damage: row.damage,
+    damageType: row.damage_type,
+    damageAffinity: row.damage_affinity,
     previousHp: row.previous_hp,
     resultingHp: row.resulting_hp,
   }
