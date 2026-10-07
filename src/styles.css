@@ -451,3 +451,130 @@ h2 {
     flex: 1 1 40%;
   }
 }
+
+
+.player-session {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(260px, 1.1fr);
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.player-identity,
+.presence-panel {
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.player-identity {
+  display: grid;
+  gap: 7px;
+}
+
+.player-identity label,
+.presence-panel__label {
+  color: #8f93a8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.player-identity > div {
+  display: flex;
+  gap: 6px;
+}
+
+.player-identity input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  color: #f7f5f0;
+  background: rgba(0, 0, 0, 0.2);
+  outline: none;
+}
+
+.player-identity input:focus {
+  border-color: rgba(215, 197, 255, 0.62);
+}
+
+.player-identity button {
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  color: #f7f5f0;
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+
+.player-identity button:disabled {
+  color: #6f7280;
+  cursor: not-allowed;
+}
+
+.player-identity > span {
+  color: #8f93a8;
+  font-size: 0.76rem;
+}
+
+.presence-panel {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+}
+
+.presence-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.presence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 0.8rem;
+}
+
+.presence-chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #79c995;
+  box-shadow: 0 0 8px rgba(121, 201, 149, 0.5);
+}
+
+.presence-chip small {
+  color: #d9bc74;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.presence-empty {
+  color: #7f8294;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .player-session {
+    grid-template-columns: 1fr;
+  }
+
+  .player-identity > div {
+    width: 100%;
+  }
+
+  .player-identity input {
+    width: 100%;
+  }
+}
