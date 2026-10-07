@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { CombatantCard } from './components/CombatantCard'
 import {
+  assignCombatantController,
   joinBattleRoom,
   loadCurrentPlayerIdentity,
   loadOrCreateBattle,
@@ -92,6 +93,7 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [savingHp, setSavingHp] = useState(false)
   const [joiningRoom, setJoiningRoom] = useState(false)
+  const [assigningController, setAssigningController] = useState(false)
 
   const [playerIdentity, setPlayerIdentity] =
     useState<PlayerIdentity | null>(null)
@@ -195,9 +197,28 @@ export default function App() {
 
   const heroes = combatants.filter((combatant) => combatant.side === 'heroes')
   const enemies = combatants.filter((combatant) => combatant.side === 'enemies')
+  const assignablePlayers = onlinePlayers.filter(
+    (player) => player.role === 'player',
+  )
+  const selectedController = selected?.controllerUserId
+    ? onlinePlayers.find(
+        (player) => player.userId === selected.controllerUserId,
+      )
+    : null
+  const canControlSelected =
+    playerIdentity?.role === 'host' ||
+    (Boolean(selected?.controllerUserId) &&
+      selected?.controllerUserId === playerIdentity?.userId)
 
   async function changeHp(amount: number) {
-    if (!selected || connectionStatus !== 'online' || savingHp) return
+    if (
+      !selected ||
+      !canControlSelected ||
+      connectionStatus !== 'online' ||
+      savingHp
+    ) {
+      return
+    }
 
     const nextHp = Math.max(
       0,
@@ -228,6 +249,44 @@ export default function App() {
       )
     } finally {
       setSavingHp(false)
+    }
+  }
+
+  async function handleAssignController(userId: string | null) {
+    if (
+      !selected ||
+      selected.side !== 'heroes' ||
+      playerIdentity?.role !== 'host' ||
+      assigningController
+    ) {
+      return
+    }
+
+    setAssigningController(true)
+    setErrorMessage(null)
+
+    try {
+      const assignment = await assignCombatantController(selected.id, userId)
+
+      setCombatants((current) =>
+        current.map((combatant) =>
+          combatant.id === assignment.combatantId
+            ? {
+                ...combatant,
+                controllerUserId: assignment.controllerUserId,
+              }
+            : combatant,
+        ),
+      )
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível atribuir o personagem.',
+      )
+    } finally {
+      setAssigningController(false)
     }
   }
 
@@ -312,7 +371,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Presence de jogadores · v0.4</span>
+          <span className="eyebrow">Controle de personagens · v0.5</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -440,6 +499,39 @@ export default function App() {
             </div>
           </div>
 
+          {selected?.side === 'heroes' ? (
+            <div className="assignment-panel">
+              <span className="assignment-panel__label">
+                Controle de {selected.name}
+              </span>
+
+              {playerIdentity?.role === 'host' ? (
+                <select
+                  value={selected.controllerUserId ?? ''}
+                  onChange={(event) =>
+                    void handleAssignController(event.target.value || null)
+                  }
+                  disabled={assigningController}
+                >
+                  <option value="">Somente GM</option>
+                  {assignablePlayers.map((player) => (
+                    <option key={player.userId} value={player.userId}>
+                      {player.displayName}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <strong>
+                  {selected.controllerUserId === playerIdentity?.userId
+                    ? 'Este personagem é seu.'
+                    : selectedController
+                      ? `Controlado por ${selectedController.displayName}.`
+                      : 'Controlado pelo GM.'}
+                </strong>
+              )}
+            </div>
+          ) : null}
+
           <div className="room-controls">
             <div>
               <span className="room-controls__label">Sua sala</span>
@@ -489,14 +581,24 @@ export default function App() {
           <button
             type="button"
             onClick={() => void changeHp(-5)}
-            disabled={!selected || connectionStatus !== 'online' || savingHp}
+            disabled={
+              !selected ||
+              !canControlSelected ||
+              connectionStatus !== 'online' ||
+              savingHp
+            }
           >
             Dano −5
           </button>
           <button
             type="button"
             onClick={() => void changeHp(5)}
-            disabled={!selected || connectionStatus !== 'online' || savingHp}
+            disabled={
+              !selected ||
+              !canControlSelected ||
+              connectionStatus !== 'online' ||
+              savingHp
+            }
           >
             Cura +5
           </button>
