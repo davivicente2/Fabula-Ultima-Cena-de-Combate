@@ -315,6 +315,94 @@ revoke all on function public.perform_guard(uuid)
 grant execute on function public.perform_guard(uuid)
   to authenticated;
 
+-- Starting a fresh conflict clears Guard left from any previous scene.
+create or replace function public.start_battle_turns(
+  p_battle_id uuid,
+  p_first_side text
+)
+returns table (
+  battle_id uuid,
+  conflict_started boolean,
+  round_number integer,
+  initiative_side text,
+  current_side text
+)
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_room_id uuid;
+  v_current_side text;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  if p_first_side not in ('heroes', 'enemies') then
+    raise exception 'Lado inicial inválido.';
+  end if;
+
+  select battles.room_id
+  into v_room_id
+  from public.battles
+  where battles.id = p_battle_id;
+
+  if v_room_id is null then
+    raise exception 'Batalha não encontrada.';
+  end if;
+
+  if not private.is_room_host(v_room_id) then
+    raise exception 'Apenas o GM pode iniciar o conflito.';
+  end if;
+
+  if exists (
+    select 1
+    from public.combatants
+    where combatants.battle_id = p_battle_id
+      and combatants.side = p_first_side
+      and combatants.hp > 0
+  ) then
+    v_current_side := p_first_side;
+  elsif exists (
+    select 1
+    from public.combatants
+    where combatants.battle_id = p_battle_id
+      and combatants.side <> p_first_side
+      and combatants.hp > 0
+  ) then
+    v_current_side := case
+      when p_first_side = 'heroes' then 'enemies'
+      else 'heroes'
+    end;
+  else
+    raise exception 'Não há combatentes aptos a agir.';
+  end if;
+
+  update public.combatants
+  set
+    last_acted_round = 0,
+    guard_started_round = null
+  where combatants.battle_id = p_battle_id;
+
+  update public.battles
+  set
+    conflict_started = true,
+    round_number = 1,
+    initiative_side = p_first_side,
+    current_side = v_current_side
+  where id = p_battle_id;
+
+  return query
+  select p_battle_id, true, 1, p_first_side, v_current_side;
+end;
+$;
+
+revoke all on function public.start_battle_turns(uuid, text)
+  from public, anon;
+grant execute on function public.start_battle_turns(uuid, text)
+  to authenticated;
+
 -- Guard ends when the conflict ends.
 create or replace function public.stop_battle_turns(
   p_battle_id uuid
