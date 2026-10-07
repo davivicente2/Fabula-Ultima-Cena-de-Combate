@@ -89,6 +89,7 @@ type EndTurnRpcRow = {
   acted_round: number
   next_round: number
   next_side: CombatSide | null
+  next_revision: number
 }
 
 type PlayerIdentityRpcRow = {
@@ -178,6 +179,10 @@ type CombatAttackRpcRow = {
   damage_affinity: DamageAffinity | 'neutral'
   previous_hp: number
   resulting_hp: number
+  acted_round: number
+  next_round: number
+  next_side: CombatSide | null
+  next_revision: number
 }
 
 export type BattleTurnState = {
@@ -796,6 +801,7 @@ export async function endCombatantTurn(
     actedRound: row.acted_round,
     nextRound: row.next_round,
     nextSide: row.next_side,
+    nextRevision: row.next_revision,
   }
 }
 
@@ -820,6 +826,7 @@ export async function performGuard(
     actedRound: row.acted_round,
     nextRound: row.next_round,
     nextSide: row.next_side,
+    nextRevision: row.next_revision,
   }
 }
 
@@ -858,6 +865,10 @@ export async function performCombatantAttack(
     damageAffinity: row.damage_affinity,
     previousHp: row.previous_hp,
     resultingHp: row.resulting_hp,
+    actedRound: row.acted_round,
+    nextRound: row.next_round,
+    nextSide: row.next_side,
+    nextRevision: row.next_revision,
   }
 }
 
