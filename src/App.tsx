@@ -2,12 +2,22 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { CombatantCard } from './components/CombatantCard'
 import {
+  assignCombatantController,
   joinBattleRoom,
+  loadCurrentPlayerIdentity,
   loadOrCreateBattle,
   saveCombatantHp,
+  savePlayerDisplayName,
   subscribeToCombatantUpdates,
 } from './lib/battleRepository'
-import type { LoadedBattle } from './lib/battleRepository'
+import type {
+  LoadedBattle,
+  PlayerIdentity,
+} from './lib/battleRepository'
+import {
+  subscribeToRoomPresence,
+} from './lib/presence'
+import type { OnlinePlayer } from './lib/presence'
 import type { Combatant } from './types/combat'
 
 const initialCombatants: Omit<Combatant, 'id'>[] = [
@@ -56,10 +66,16 @@ const initialCombatants: Omit<Combatant, 'id'>[] = [
 
 type ConnectionStatus = 'connecting' | 'online' | 'error'
 
+const storedPlayerNameKey = 'fabula-player-name'
+
 function setRoomInUrl(roomCode: string) {
   const url = new URL(window.location.href)
   url.searchParams.set('room', roomCode)
   window.history.replaceState(null, '', url)
+}
+
+function roleLabel(role: PlayerIdentity['role']) {
+  return role === 'host' ? 'GM' : 'Jogador'
 }
 
 export default function App() {
@@ -68,6 +84,7 @@ export default function App() {
   const [combatants, setCombatants] = useState<Combatant[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [battleId, setBattleId] = useState<string | null>(null)
+  const [roomId, setRoomId] = useState<string | null>(null)
   const [battleName, setBattleName] = useState('Carregando batalha…')
   const [roomCode, setRoomCode] = useState('')
   const [joinCode, setJoinCode] = useState('')
@@ -76,15 +93,35 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [savingHp, setSavingHp] = useState(false)
   const [joiningRoom, setJoiningRoom] = useState(false)
+  const [assigningController, setAssigningController] = useState(false)
 
-  function applyBattle(battle: LoadedBattle) {
+  const [playerIdentity, setPlayerIdentity] =
+    useState<PlayerIdentity | null>(null)
+  const [playerName, setPlayerName] = useState(
+    () => localStorage.getItem(storedPlayerNameKey) ?? '',
+  )
+  const [savingPlayerName, setSavingPlayerName] = useState(false)
+  const [onlinePlayers, setOnlinePlayers] = useState<OnlinePlayer[]>([])
+
+  async function applyBattle(battle: LoadedBattle) {
     setCombatants(battle.combatants)
     setSelectedId(battle.combatants[0]?.id ?? null)
     setBattleId(battle.id)
+    setRoomId(battle.roomId)
     setBattleName(battle.name)
     setRoomCode(battle.roomCode)
     setJoinCode('')
     setRoomInUrl(battle.roomCode)
+
+    let identity = await loadCurrentPlayerIdentity(battle.roomId)
+    const storedName = localStorage.getItem(storedPlayerNameKey)?.trim()
+
+    if (!identity.displayName && storedName) {
+      identity = await savePlayerDisplayName(battle.roomId, storedName)
+    }
+
+    setPlayerIdentity(identity)
+    setPlayerName(identity.displayName ?? storedName ?? '')
   }
 
   useEffect(() => {
@@ -101,7 +138,7 @@ export default function App() {
           requestedRoomCode,
         )
 
-        applyBattle(battle)
+        await applyBattle(battle)
         setConnectionStatus('online')
       } catch (error) {
         console.error(error)
@@ -131,6 +168,28 @@ export default function App() {
     })
   }, [battleId, connectionStatus])
 
+  useEffect(() => {
+    if (
+      !roomId ||
+      connectionStatus !== 'online' ||
+      !playerIdentity?.displayName
+    ) {
+      setOnlinePlayers([])
+      return
+    }
+
+    setOnlinePlayers([])
+
+    return subscribeToRoomPresence(
+      roomId,
+      {
+        ...playerIdentity,
+        displayName: playerIdentity.displayName,
+      },
+      setOnlinePlayers,
+    )
+  }, [roomId, connectionStatus, playerIdentity])
+
   const selected = useMemo(
     () => combatants.find((combatant) => combatant.id === selectedId),
     [combatants, selectedId],
@@ -138,9 +197,28 @@ export default function App() {
 
   const heroes = combatants.filter((combatant) => combatant.side === 'heroes')
   const enemies = combatants.filter((combatant) => combatant.side === 'enemies')
+  const assignablePlayers = onlinePlayers.filter(
+    (player) => player.role === 'player',
+  )
+  const selectedController = selected?.controllerUserId
+    ? onlinePlayers.find(
+        (player) => player.userId === selected.controllerUserId,
+      )
+    : null
+  const canControlSelected =
+    playerIdentity?.role === 'host' ||
+    (Boolean(selected?.controllerUserId) &&
+      selected?.controllerUserId === playerIdentity?.userId)
 
   async function changeHp(amount: number) {
-    if (!selected || connectionStatus !== 'online' || savingHp) return
+    if (
+      !selected ||
+      !canControlSelected ||
+      connectionStatus !== 'online' ||
+      savingHp
+    ) {
+      return
+    }
 
     const nextHp = Math.max(
       0,
@@ -174,24 +252,97 @@ export default function App() {
     }
   }
 
+  async function handleAssignController(userId: string | null) {
+    if (
+      !selected ||
+      selected.side !== 'heroes' ||
+      playerIdentity?.role !== 'host' ||
+      assigningController
+    ) {
+      return
+    }
+
+    setAssigningController(true)
+    setErrorMessage(null)
+
+    try {
+      const assignment = await assignCombatantController(selected.id, userId)
+
+      setCombatants((current) =>
+        current.map((combatant) =>
+          combatant.id === assignment.combatantId
+            ? {
+                ...combatant,
+                controllerUserId: assignment.controllerUserId,
+              }
+            : combatant,
+        ),
+      )
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível atribuir o personagem.',
+      )
+    } finally {
+      setAssigningController(false)
+    }
+  }
+
   async function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (joiningRoom) return
 
     setJoiningRoom(true)
     setErrorMessage(null)
+    setOnlinePlayers([])
 
     try {
       const battle = await joinBattleRoom(joinCode, initialCombatants)
-      applyBattle(battle)
+      await applyBattle(battle)
       setConnectionStatus('online')
     } catch (error) {
       console.error(error)
       setErrorMessage(
-        error instanceof Error ? error.message : 'Não foi possível entrar na sala.',
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível entrar na sala.',
       )
     } finally {
       setJoiningRoom(false)
+    }
+  }
+
+  async function handleSavePlayerName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!roomId || savingPlayerName) return
+
+    const normalizedName = playerName.trim()
+
+    if (!normalizedName) {
+      setErrorMessage('Informe um nome para aparecer na sala.')
+      return
+    }
+
+    setSavingPlayerName(true)
+    setErrorMessage(null)
+
+    try {
+      const identity = await savePlayerDisplayName(roomId, normalizedName)
+      localStorage.setItem(storedPlayerNameKey, normalizedName)
+      setPlayerIdentity(identity)
+      setPlayerName(normalizedName)
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível salvar seu nome.',
+      )
+    } finally {
+      setSavingPlayerName(false)
     }
   }
 
@@ -220,7 +371,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Sala compartilhada · v0.3</span>
+          <span className="eyebrow">Controle de personagens · v0.5</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -228,6 +379,12 @@ export default function App() {
           {roomCode ? (
             <div className="room-pill">
               Sala <strong>{roomCode}</strong>
+            </div>
+          ) : null}
+
+          {playerIdentity?.displayName ? (
+            <div className="room-pill">
+              Online <strong>{onlinePlayers.length}</strong>
             </div>
           ) : null}
 
@@ -276,9 +433,104 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            O HP é persistido no Supabase e alterações da mesma sala são
-            recebidas em tempo real pelos outros navegadores conectados.
+            A batalha continua sincronizada em tempo real. Agora cada membro
+            também possui uma identidade na sala e podemos ver quem está
+            conectado.
           </p>
+
+          <div className="player-session">
+            <form
+              className="player-identity"
+              onSubmit={(event) => void handleSavePlayerName(event)}
+            >
+              <label htmlFor="player-name">Seu nome na sala</label>
+              <div>
+                <input
+                  id="player-name"
+                  value={playerName}
+                  onChange={(event) => setPlayerName(event.target.value)}
+                  placeholder="Ex.: Davi"
+                  maxLength={32}
+                  autoComplete="off"
+                />
+                <button
+                  type="submit"
+                  disabled={
+                    !roomId ||
+                    !playerName.trim() ||
+                    savingPlayerName
+                  }
+                >
+                  {savingPlayerName
+                    ? 'Salvando…'
+                    : playerIdentity?.displayName
+                      ? 'Atualizar'
+                      : 'Entrar'}
+                </button>
+              </div>
+              {playerIdentity?.displayName ? (
+                <span>
+                  Você está como <strong>{roleLabel(playerIdentity.role)}</strong>.
+                </span>
+              ) : (
+                <span>Defina um nome para aparecer como online.</span>
+              )}
+            </form>
+
+            <div className="presence-panel">
+              <span className="presence-panel__label">Online agora</span>
+              <div className="presence-list">
+                {onlinePlayers.length > 0 ? (
+                  onlinePlayers.map((player) => (
+                    <span className="presence-chip" key={player.userId}>
+                      <span className="presence-chip__dot" />
+                      {player.displayName}
+                      {player.role === 'host' ? <small>GM</small> : null}
+                    </span>
+                  ))
+                ) : (
+                  <span className="presence-empty">
+                    {playerIdentity?.displayName
+                      ? 'Conectando ao Presence…'
+                      : 'Defina seu nome primeiro.'}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {selected?.side === 'heroes' ? (
+            <div className="assignment-panel">
+              <span className="assignment-panel__label">
+                Controle de {selected.name}
+              </span>
+
+              {playerIdentity?.role === 'host' ? (
+                <select
+                  value={selected.controllerUserId ?? ''}
+                  onChange={(event) =>
+                    void handleAssignController(event.target.value || null)
+                  }
+                  disabled={assigningController}
+                >
+                  <option value="">Somente GM</option>
+                  {assignablePlayers.map((player) => (
+                    <option key={player.userId} value={player.userId}>
+                      {player.displayName}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <strong>
+                  {selected.controllerUserId === playerIdentity?.userId
+                    ? 'Este personagem é seu.'
+                    : selectedController
+                      ? `Controlado por ${selectedController.displayName}.`
+                      : 'Controlado pelo GM.'}
+                </strong>
+              )}
+            </div>
+          ) : null}
 
           <div className="room-controls">
             <div>
@@ -294,13 +546,18 @@ export default function App() {
               </button>
             </div>
 
-            <form className="room-join" onSubmit={(event) => void handleJoinRoom(event)}>
+            <form
+              className="room-join"
+              onSubmit={(event) => void handleJoinRoom(event)}
+            >
               <label htmlFor="room-code">Entrar em outra sala</label>
               <div>
                 <input
                   id="room-code"
                   value={joinCode}
-                  onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                  onChange={(event) =>
+                    setJoinCode(event.target.value.toUpperCase())
+                  }
                   placeholder="Código da sala"
                   maxLength={10}
                   autoComplete="off"
@@ -324,14 +581,24 @@ export default function App() {
           <button
             type="button"
             onClick={() => void changeHp(-5)}
-            disabled={!selected || connectionStatus !== 'online' || savingHp}
+            disabled={
+              !selected ||
+              !canControlSelected ||
+              connectionStatus !== 'online' ||
+              savingHp
+            }
           >
             Dano −5
           </button>
           <button
             type="button"
             onClick={() => void changeHp(5)}
-            disabled={!selected || connectionStatus !== 'online' || savingHp}
+            disabled={
+              !selected ||
+              !canControlSelected ||
+              connectionStatus !== 'online' ||
+              savingHp
+            }
           >
             Cura +5
           </button>

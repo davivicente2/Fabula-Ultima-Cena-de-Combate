@@ -15,6 +15,7 @@ type CombatantRow = {
   max_ip: number
   is_active: boolean
   sort_order: number
+  controller_user_id: string | null
 }
 
 type RoomBattleRpcRow = {
@@ -30,12 +31,31 @@ type BattleRow = {
   room_id: string
 }
 
+type PlayerIdentityRpcRow = {
+  user_id: string
+  role: PlayerRole
+  display_name: string
+}
+
+type CombatantAssignmentRpcRow = {
+  combatant_id: string
+  controller_user_id: string | null
+}
+
 export type LoadedBattle = {
   id: string
   name: string
   roomId: string
   roomCode: string
   combatants: Combatant[]
+}
+
+export type PlayerRole = 'host' | 'player'
+
+export type PlayerIdentity = {
+  userId: string
+  role: PlayerRole
+  displayName: string | null
 }
 
 async function ensureAnonymousSession() {
@@ -67,6 +87,7 @@ function toCombatant(row: CombatantRow): Combatant {
     ip: row.ip,
     maxIp: row.max_ip,
     isActive: row.is_active,
+    controllerUserId: row.controller_user_id,
   }
 }
 
@@ -74,7 +95,7 @@ async function loadCombatants(battleId: string) {
   const { data, error } = await supabase
     .from('combatants')
     .select(
-      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order',
+      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id',
     )
     .eq('battle_id', battleId)
     .order('sort_order', { ascending: true })
@@ -211,6 +232,70 @@ export async function loadOrCreateBattle(
   }
 
   return createBattleRoom(initialCombatants)
+}
+
+export async function loadCurrentPlayerIdentity(
+  roomId: string,
+): Promise<PlayerIdentity> {
+  const userId = await ensureAnonymousSession()
+
+  const { data, error } = await supabase
+    .from('room_members')
+    .select('user_id, role, display_name')
+    .eq('room_id', roomId)
+    .eq('user_id', userId)
+    .single()
+
+  if (error) throw error
+
+  return {
+    userId: data.user_id as string,
+    role: data.role as PlayerRole,
+    displayName: (data.display_name as string | null) ?? null,
+  }
+}
+
+export async function savePlayerDisplayName(
+  roomId: string,
+  displayName: string,
+): Promise<PlayerIdentity> {
+  const { data, error } = await supabase
+    .rpc('set_my_room_display_name', {
+      p_room_id: roomId,
+      p_display_name: displayName,
+    })
+    .single()
+
+  if (error) throw error
+
+  const row = data as PlayerIdentityRpcRow
+
+  return {
+    userId: row.user_id,
+    role: row.role,
+    displayName: row.display_name,
+  }
+}
+
+export async function assignCombatantController(
+  combatantId: string,
+  userId: string | null,
+) {
+  const { data, error } = await supabase
+    .rpc('assign_combatant_controller', {
+      p_combatant_id: combatantId,
+      p_user_id: userId,
+    })
+    .single()
+
+  if (error) throw error
+
+  const row = data as CombatantAssignmentRpcRow
+
+  return {
+    combatantId: row.combatant_id,
+    controllerUserId: row.controller_user_id,
+  }
 }
 
 export async function saveCombatantHp(combatantId: string, hp: number) {

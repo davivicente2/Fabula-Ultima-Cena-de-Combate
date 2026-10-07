@@ -11,6 +11,7 @@ export type Combatant = {
   ip: number
   maxIp: number
   isActive?: boolean
+  controllerUserId?: string | null
 }
 
 export type ResourceName = 'HP' | 'MP' | 'IP'
