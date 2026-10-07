@@ -42,6 +42,15 @@ type CombatantAssignmentRpcRow = {
   controller_user_id: string | null
 }
 
+type CombatantHpActionRpcRow = {
+  action_id: string | null
+  combatant_id: string
+  previous_hp: number
+  hp: number
+  max_hp: number
+  applied_delta: number
+}
+
 export type LoadedBattle = {
   id: string
   name: string
@@ -298,17 +307,29 @@ export async function assignCombatantController(
   }
 }
 
-export async function saveCombatantHp(combatantId: string, hp: number) {
+export async function applyCombatantHpDelta(
+  combatantId: string,
+  delta: number,
+) {
   const { data, error } = await supabase
-    .from('combatants')
-    .update({ hp })
-    .eq('id', combatantId)
-    .select('hp')
+    .rpc('apply_combatant_hp_delta', {
+      p_combatant_id: combatantId,
+      p_delta: delta,
+    })
     .single()
 
   if (error) throw error
 
-  return data.hp as number
+  const row = data as CombatantHpActionRpcRow
+
+  return {
+    actionId: row.action_id,
+    combatantId: row.combatant_id,
+    previousHp: row.previous_hp,
+    hp: row.hp,
+    maxHp: row.max_hp,
+    appliedDelta: row.applied_delta,
+  }
 }
 
 export function subscribeToCombatantUpdates(
