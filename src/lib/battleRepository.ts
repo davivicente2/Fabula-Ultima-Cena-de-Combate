@@ -747,7 +747,6 @@ async function hydrateBattle(
 
 async function loadBattleFromRpc(
   row: RoomBattleRpcRow,
-  initialCombatants: CombatantSeed[],
 ): Promise<LoadedBattle> {
   const { data: battle, error } = await supabase
     .from('battles')
@@ -759,7 +758,7 @@ async function loadBattleFromRpc(
 
   if (error) throw error
 
-  return hydrateBattle(battle as BattleRow, initialCombatants, true)
+  return hydrateBattle(battle as BattleRow)
 }
 
 async function createBattleRoom(initialCombatants: CombatantSeed[]) {
@@ -769,7 +768,10 @@ async function createBattleRoom(initialCombatants: CombatantSeed[]) {
 
   if (error) throw error
 
-  return loadBattleFromRpc(data as RoomBattleRpcRow, initialCombatants)
+  const row = data as RoomBattleRpcRow
+  await seedCombatants(row.battle_id, initialCombatants)
+
+  return loadBattleFromRpc(row)
 }
 
 export async function joinBattleRoom(
@@ -790,7 +792,7 @@ export async function joinBattleRoom(
 
   if (error) throw error
 
-  return loadBattleFromRpc(data as RoomBattleRpcRow, initialCombatants)
+  return loadBattleFromRpc(data as RoomBattleRpcRow)
 }
 
 export async function loadOrCreateBattle(
