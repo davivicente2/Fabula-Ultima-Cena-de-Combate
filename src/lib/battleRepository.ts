@@ -38,6 +38,14 @@ export type LoadedBattle = {
   combatants: Combatant[]
 }
 
+export type PlayerRole = 'host' | 'player'
+
+export type PlayerIdentity = {
+  userId: string
+  role: PlayerRole
+  displayName: string | null
+}
+
 async function ensureAnonymousSession() {
   const {
     data: { session },
@@ -211,6 +219,47 @@ export async function loadOrCreateBattle(
   }
 
   return createBattleRoom(initialCombatants)
+}
+
+export async function loadCurrentPlayerIdentity(
+  roomId: string,
+): Promise<PlayerIdentity> {
+  const userId = await ensureAnonymousSession()
+
+  const { data, error } = await supabase
+    .from('room_members')
+    .select('user_id, role, display_name')
+    .eq('room_id', roomId)
+    .eq('user_id', userId)
+    .single()
+
+  if (error) throw error
+
+  return {
+    userId: data.user_id as string,
+    role: data.role as PlayerRole,
+    displayName: (data.display_name as string | null) ?? null,
+  }
+}
+
+export async function savePlayerDisplayName(
+  roomId: string,
+  displayName: string,
+): Promise<PlayerIdentity> {
+  const { data, error } = await supabase
+    .rpc('set_my_room_display_name', {
+      p_room_id: roomId,
+      p_display_name: displayName,
+    })
+    .single()
+
+  if (error) throw error
+
+  return {
+    userId: data.user_id as string,
+    role: data.role as PlayerRole,
+    displayName: data.display_name as string,
+  }
 }
 
 export async function saveCombatantHp(combatantId: string, hp: number) {
