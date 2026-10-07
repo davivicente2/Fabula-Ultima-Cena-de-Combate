@@ -8,12 +8,14 @@ import {
   loadCombatActions,
   loadCurrentPlayerIdentity,
   loadOrCreateBattle,
+  performCombatantAttack,
   savePlayerDisplayName,
   subscribeToCombatActions,
   subscribeToCombatantUpdates,
 } from './lib/battleRepository'
 import type {
   CombatAction,
+  CombatantSeed,
   LoadedBattle,
   PlayerIdentity,
 } from './lib/battleRepository'
@@ -21,9 +23,9 @@ import {
   subscribeToRoomPresence,
 } from './lib/presence'
 import type { OnlinePlayer } from './lib/presence'
-import type { Combatant } from './types/combat'
+import type { AttributeName, Combatant } from './types/combat'
 
-const initialCombatants: Omit<Combatant, 'id'>[] = [
+const initialCombatants: CombatantSeed[] = [
   {
     name: 'Aurora',
     side: 'heroes',
@@ -33,6 +35,22 @@ const initialCombatants: Omit<Combatant, 'id'>[] = [
     maxMp: 32,
     ip: 5,
     maxIp: 6,
+    dexDie: 10,
+    insDie: 8,
+    migDie: 8,
+    wlpDie: 8,
+    defense: 11,
+    magicDefense: 10,
+    attacks: [
+      {
+        name: 'Lâmina de Aurora',
+        accuracyAttributeA: 'dex',
+        accuracyAttributeB: 'mig',
+        accuracyBonus: 1,
+        damageBonus: 8,
+        damageType: 'physical',
+      },
+    ],
     isActive: true,
   },
   {
@@ -44,6 +62,22 @@ const initialCombatants: Omit<Combatant, 'id'>[] = [
     maxMp: 24,
     ip: 4,
     maxIp: 6,
+    dexDie: 8,
+    insDie: 10,
+    migDie: 6,
+    wlpDie: 10,
+    defense: 9,
+    magicDefense: 11,
+    attacks: [
+      {
+        name: 'Disparo Arcano',
+        accuracyAttributeA: 'dex',
+        accuracyAttributeB: 'ins',
+        accuracyBonus: 1,
+        damageBonus: 8,
+        damageType: 'physical',
+      },
+    ],
   },
   {
     name: 'Lobo de Cinzas',
@@ -54,6 +88,22 @@ const initialCombatants: Omit<Combatant, 'id'>[] = [
     maxMp: 10,
     ip: 0,
     maxIp: 1,
+    dexDie: 10,
+    insDie: 6,
+    migDie: 8,
+    wlpDie: 6,
+    defense: 11,
+    magicDefense: 8,
+    attacks: [
+      {
+        name: 'Mordida',
+        accuracyAttributeA: 'dex',
+        accuracyAttributeB: 'mig',
+        accuracyBonus: 0,
+        damageBonus: 6,
+        damageType: 'physical',
+      },
+    ],
   },
   {
     name: 'Cavaleiro Rubro',
@@ -64,6 +114,22 @@ const initialCombatants: Omit<Combatant, 'id'>[] = [
     maxMp: 40,
     ip: 0,
     maxIp: 1,
+    dexDie: 8,
+    insDie: 8,
+    migDie: 10,
+    wlpDie: 8,
+    defense: 12,
+    magicDefense: 10,
+    attacks: [
+      {
+        name: 'Espada Rubra',
+        accuracyAttributeA: 'dex',
+        accuracyAttributeB: 'mig',
+        accuracyBonus: 1,
+        damageBonus: 10,
+        damageType: 'physical',
+      },
+    ],
   },
 ]
 
@@ -85,11 +151,40 @@ function combatActionText(action: CombatAction) {
   const actor = action.actorDisplayName ?? 'Jogador'
   const target = action.targetName ?? 'combatente'
 
+  if (action.actionType === 'attack') {
+    const attacker = action.attackerName ?? 'Combatente'
+    const attack = action.attackName ?? 'ataque'
+
+    if (action.isFumble) {
+      return `${actor} · ${attacker} usou ${attack} em ${target}: falha crítica.`
+    }
+
+    if (!action.isHit) {
+      return `${actor} · ${attacker} usou ${attack} em ${target}: errou.`
+    }
+
+    const critical = action.isCritical ? ' Crítico!' : ''
+    return `${actor} · ${attacker} usou ${attack} em ${target}: ${action.damage ?? 0} de dano.${critical}`
+  }
+
   if (action.appliedDelta < 0) {
     return `${actor} causou ${Math.abs(action.appliedDelta)} de dano em ${target}.`
   }
 
   return `${actor} curou ${target} em ${action.appliedDelta} HP.`
+}
+
+function attributeDie(combatant: Combatant, attribute: AttributeName) {
+  switch (attribute) {
+    case 'dex':
+      return combatant.dexDie
+    case 'ins':
+      return combatant.insDie
+    case 'mig':
+      return combatant.migDie
+    case 'wlp':
+      return combatant.wlpDie
+  }
 }
 
 function combatActionTime(createdAt: string) {
@@ -115,6 +210,8 @@ export default function App() {
   const [savingHp, setSavingHp] = useState(false)
   const [joiningRoom, setJoiningRoom] = useState(false)
   const [assigningController, setAssigningController] = useState(false)
+  const [attacking, setAttacking] = useState(false)
+  const [attackTargetId, setAttackTargetId] = useState('')
 
   const [playerIdentity, setPlayerIdentity] =
     useState<PlayerIdentity | null>(null)
@@ -184,7 +281,7 @@ export default function App() {
       setCombatants((current) =>
         current.map((combatant) =>
           combatant.id === updatedCombatant.id
-            ? updatedCombatant
+            ? { ...updatedCombatant, attacks: combatant.attacks }
             : combatant,
         ),
       )
@@ -268,6 +365,32 @@ export default function App() {
     playerIdentity?.role === 'host' ||
     (Boolean(selected?.controllerUserId) &&
       selected?.controllerUserId === playerIdentity?.userId)
+  const selectedAttack = selected?.attacks[0] ?? null
+  const attackTargets = selected
+    ? combatants.filter(
+        (combatant) =>
+          combatant.id !== selected.id && combatant.side !== selected.side,
+      )
+    : []
+  const attackTarget = attackTargets.find(
+    (combatant) => combatant.id === attackTargetId,
+  )
+
+  useEffect(() => {
+    if (!selected) {
+      setAttackTargetId('')
+      return
+    }
+
+    const targets = combatants.filter(
+      (combatant) =>
+        combatant.id !== selected.id && combatant.side !== selected.side,
+    )
+
+    if (!targets.some((combatant) => combatant.id === attackTargetId)) {
+      setAttackTargetId(targets[0]?.id ?? '')
+    }
+  }, [selected, combatants, attackTargetId])
 
   async function changeHp(amount: number) {
     if (
@@ -301,6 +424,46 @@ export default function App() {
       )
     } finally {
       setSavingHp(false)
+    }
+  }
+
+  async function handleAttack() {
+    if (
+      !selected ||
+      !selectedAttack ||
+      !attackTarget ||
+      !canControlSelected ||
+      connectionStatus !== 'online' ||
+      attacking
+    ) {
+      return
+    }
+
+    setAttacking(true)
+    setErrorMessage(null)
+
+    try {
+      const result = await performCombatantAttack(
+        selectedAttack.id,
+        attackTarget.id,
+      )
+
+      setCombatants((current) =>
+        current.map((combatant) =>
+          combatant.id === result.targetId
+            ? { ...combatant, hp: result.resultingHp }
+            : combatant,
+        ),
+      )
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível realizar o ataque.',
+      )
+    } finally {
+      setAttacking(false)
     }
   }
 
@@ -423,7 +586,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Log de combate · v0.7</span>
+          <span className="eyebrow">Ataques autoritativos · v0.8</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -485,9 +648,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            Alterações de HP agora são validadas e calculadas no backend.
-            O navegador solicita a ação, e o Supabase aplica o resultado
-            autorizado e sincroniza a batalha.
+            Ataques agora são rolados e resolvidos no backend. O Supabase
+            valida quem controla o atacante, rola os dados, compara com a
+            Defesa do alvo, aplica o dano e registra tudo no combate.
           </p>
 
           <div className="player-session">
@@ -584,6 +747,51 @@ export default function App() {
             </div>
           ) : null}
 
+          {selected ? (
+            <div className="attack-panel">
+              <div className="attack-panel__summary">
+                <span className="attack-panel__label">Ataque básico</span>
+                {selectedAttack ? (
+                  <>
+                    <strong>{selectedAttack.name}</strong>
+                    <small>
+                      {selectedAttack.accuracyAttributeA.toUpperCase()} d
+                      {attributeDie(
+                        selected,
+                        selectedAttack.accuracyAttributeA,
+                      )}{' '}
+                      + {selectedAttack.accuracyAttributeB.toUpperCase()} d
+                      {attributeDie(
+                        selected,
+                        selectedAttack.accuracyAttributeB,
+                      )}{' '}
+                      {selectedAttack.accuracyBonus >= 0 ? '+' : ''}
+                      {selectedAttack.accuracyBonus} · HR +
+                      {selectedAttack.damageBonus}
+                    </small>
+                  </>
+                ) : (
+                  <strong>Sem ataque configurado.</strong>
+                )}
+              </div>
+
+              <label>
+                Alvo
+                <select
+                  value={attackTargetId}
+                  onChange={(event) => setAttackTargetId(event.target.value)}
+                  disabled={!canControlSelected || attacking}
+                >
+                  {attackTargets.map((target) => (
+                    <option key={target.id} value={target.id}>
+                      {target.name} · DEF {target.defense}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : null}
+
           <div className="combat-log">
             <div className="combat-log__header">
               <span className="combat-log__label">Registro de combate</span>
@@ -596,8 +804,19 @@ export default function App() {
                   <div className="combat-log__entry" key={action.id}>
                     <span>{combatActionText(action)}</span>
                     <small>
-                      {combatActionTime(action.createdAt)} · HP{' '}
-                      {action.previousHp} → {action.resultingHp}
+                      {combatActionTime(action.createdAt)}
+                      {action.actionType === 'attack' ? (
+                        <>
+                          {' '}· Rolagem {action.rollA} + {action.rollB}
+                          {action.checkTotal !== null
+                            ? ` = ${action.checkTotal}`
+                            : ''}
+                          {action.targetDefense !== null
+                            ? ` vs DEF ${action.targetDefense}`
+                            : ''}
+                        </>
+                      ) : null}
+                      {' '}· HP {action.previousHp} → {action.resultingHp}
                     </small>
                   </div>
                 ))
@@ -679,8 +898,19 @@ export default function App() {
           >
             Cura +5
           </button>
-          <button type="button" disabled>
-            Atacar
+          <button
+            type="button"
+            onClick={() => void handleAttack()}
+            disabled={
+              !selected ||
+              !selectedAttack ||
+              !attackTarget ||
+              !canControlSelected ||
+              connectionStatus !== 'online' ||
+              attacking
+            }
+          >
+            {attacking ? 'Atacando…' : 'Atacar'}
           </button>
           <button type="button" disabled>
             Habilidade

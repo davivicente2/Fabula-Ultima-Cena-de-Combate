@@ -8,6 +8,7 @@ on:
       - feat/player-presence
       - feat/authoritative-actions
       - feat/combat-log
+      - feat/authoritative-attacks
       - main
   workflow_dispatch:
 
