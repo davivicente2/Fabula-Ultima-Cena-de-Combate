@@ -1866,6 +1866,24 @@ export default function App() {
                           {' '}· {action.resourceName.toUpperCase()}{' '}
                           {action.previousResource} → {action.resultingResource}
                         </>
+                      ) : action.actionType === 'inventory' ? (
+                        <>
+                          {action.previousIp !== null &&
+                          action.resultingIp !== null
+                            ? ` · IP ${action.previousIp} → ${action.resultingIp}`
+                            : ''}
+                          {action.inventoryItem === 'remedy'
+                            ? ` · HP ${action.previousHp} → ${action.resultingHp}`
+                            : ''}
+                          {action.inventoryItem === 'elixir' &&
+                          action.previousResource !== null &&
+                          action.resultingResource !== null
+                            ? ` · MP ${action.previousResource} → ${action.resultingResource}`
+                            : ''}
+                          {action.inventoryItem === 'tonic'
+                            ? ` · Status removidos: ${action.statusesRemoved ?? 0}`
+                            : ''}
+                        </>
                       ) : (
                         <>
                           {' '}· HP {action.previousHp} → {action.resultingHp}
