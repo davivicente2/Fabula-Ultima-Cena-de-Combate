@@ -340,6 +340,7 @@ export default function App() {
     roundNumber: 0,
     initiativeSide: null,
     currentSide: null,
+    turnRevision: 0,
   })
 
   const [playerIdentity, setPlayerIdentity] =
@@ -534,6 +535,7 @@ export default function App() {
           (combatant.lastActedRound ?? 0) < turnState.roundNumber,
       )
     : []
+  const combatActionBusy = attacking || guarding || endingTurn
 
   useEffect(() => {
     if (!selected) {
@@ -612,13 +614,16 @@ export default function App() {
   }
 
   async function handleEndTurn() {
-    if (!selected || !canActSelected || endingTurn) return
+    if (!selected || !canActSelected || combatActionBusy) return
 
     setEndingTurn(true)
     setErrorMessage(null)
 
     try {
-      const result = await endCombatantTurn(selected.id)
+      const result = await endCombatantTurn(
+        selected.id,
+        turnState.turnRevision,
+      )
 
       setCombatants((current) =>
         current.map((combatant) =>
@@ -633,6 +638,7 @@ export default function App() {
         started: result.nextSide !== null,
         roundNumber: result.nextRound,
         currentSide: result.nextSide,
+        turnRevision: result.nextRevision,
       }))
     } catch (error) {
       console.error(error)
@@ -647,13 +653,16 @@ export default function App() {
   }
 
   async function handleGuard() {
-    if (!selected || !canActSelected || guarding) return
+    if (!selected || !canActSelected || combatActionBusy) return
 
     setGuarding(true)
     setErrorMessage(null)
 
     try {
-      const result = await performGuard(selected.id)
+      const result = await performGuard(
+        selected.id,
+        turnState.turnRevision,
+      )
 
       setCombatants((current) =>
         current.map((combatant) =>
@@ -672,6 +681,7 @@ export default function App() {
         started: result.nextSide !== null,
         roundNumber: result.nextRound,
         currentSide: result.nextSide,
+        turnRevision: result.nextRevision,
       }))
     } catch (error) {
       console.error(error)
@@ -774,7 +784,7 @@ export default function App() {
       !attackTarget ||
       !canActSelected ||
       connectionStatus !== 'online' ||
-      attacking
+      combatActionBusy
     ) {
       return
     }
@@ -786,15 +796,39 @@ export default function App() {
       const result = await performCombatantAttack(
         selectedAttack.id,
         attackTarget.id,
+        turnState.turnRevision,
       )
 
       setCombatants((current) =>
-        current.map((combatant) =>
-          combatant.id === result.targetId
-            ? { ...combatant, hp: result.resultingHp }
-            : combatant,
-        ),
+        current.map((combatant) => {
+          if (combatant.id === result.attackerId) {
+            return {
+              ...combatant,
+              lastActedRound: result.actedRound,
+              guardStartedRound:
+                combatant.guardStartedRound !== null &&
+                combatant.guardStartedRound !== undefined &&
+                combatant.guardStartedRound < result.actedRound
+                  ? null
+                  : combatant.guardStartedRound,
+            }
+          }
+
+          if (combatant.id === result.targetId) {
+            return { ...combatant, hp: result.resultingHp }
+          }
+
+          return combatant
+        }),
       )
+
+      setTurnState((current) => ({
+        ...current,
+        started: result.nextSide !== null,
+        roundNumber: result.nextRound,
+        currentSide: result.nextSide,
+        turnRevision: result.nextRevision,
+      }))
     } catch (error) {
       console.error(error)
       setErrorMessage(
@@ -1188,7 +1222,7 @@ export default function App() {
                 <select
                   value={attackTargetId}
                   onChange={(event) => setAttackTargetId(event.target.value)}
-                  disabled={!canActSelected || attacking}
+                  disabled={!canActSelected || combatActionBusy}
                 >
                   {attackTargets.map((target) => (
                     <option key={target.id} value={target.id}>
@@ -1323,7 +1357,7 @@ export default function App() {
                 !attackTarget ||
                 !canActSelected ||
                 connectionStatus !== 'online' ||
-                attacking
+                combatActionBusy
               }
             >
               {attacking ? 'Atacando…' : 'Atacar'}
@@ -1332,7 +1366,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => void handleGuard()}
-              disabled={!canActSelected || guarding}
+              disabled={!canActSelected || combatActionBusy}
             >
               {guarding ? 'Defendendo…' : 'Guard'}
             </button>
@@ -1340,7 +1374,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => void handleEndTurn()}
-              disabled={!canActSelected || endingTurn}
+              disabled={!canActSelected || combatActionBusy}
             >
               {endingTurn ? 'Encerrando…' : 'Encerrar turno'}
             </button>
