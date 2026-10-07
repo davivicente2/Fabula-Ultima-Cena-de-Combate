@@ -43,6 +43,26 @@ button {
   margin-bottom: 16px;
 }
 
+.topbar__status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.room-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  color: #c9cbd8;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 0.84rem;
+}
+
 h1,
 h2,
 p {
@@ -270,8 +290,79 @@ h2 {
   line-height: 1.45;
 }
 
+.command-panel__info {
+  min-width: 0;
+  flex: 1;
+}
+
 .command-panel .connection-error {
   color: #e58a93;
+}
+
+.room-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.room-controls > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+}
+
+.room-controls__label,
+.room-join label {
+  color: #8f93a8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.room-controls__link,
+.room-join button {
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  color: #f7f5f0;
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+
+.room-controls__link:disabled,
+.room-join button:disabled {
+  color: #6f7280;
+  cursor: not-allowed;
+}
+
+.room-join {
+  display: grid;
+  gap: 5px;
+}
+
+.room-join > div {
+  display: flex;
+  gap: 6px;
+}
+
+.room-join input {
+  width: 170px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  color: #f7f5f0;
+  background: rgba(0, 0, 0, 0.2);
+  outline: none;
+  text-transform: uppercase;
+}
+
+.room-join input:focus {
+  border-color: rgba(215, 197, 255, 0.62);
 }
 
 .command-panel__buttons {
@@ -311,8 +402,26 @@ h2 {
     flex-direction: column;
   }
 
+  .topbar__status {
+    justify-content: flex-start;
+  }
+
   .connection-pill {
     align-self: flex-start;
+  }
+
+  .room-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .room-join > div {
+    width: 100%;
+  }
+
+  .room-join input {
+    flex: 1;
+    width: auto;
   }
 
   .battlefield {
