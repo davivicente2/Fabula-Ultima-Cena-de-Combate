@@ -3,6 +3,8 @@ export type CombatSide = 'heroes' | 'enemies'
 export type AttributeName = 'dex' | 'ins' | 'mig' | 'wlp'
 export type DieSize = 6 | 8 | 10 | 12
 
+export type InventoryItem = 'remedy' | 'elixir' | 'tonic'
+
 export type StatusEffect =
   | 'slow'
   | 'dazed'
