@@ -1,7 +1,16 @@
 import { supabase } from './supabase'
-import type { Combatant, CombatSide } from '../types/combat'
+import type {
+  AttributeName,
+  CombatAttack,
+  Combatant,
+  CombatSide,
+  DieSize,
+} from '../types/combat'
 
-type CombatantSeed = Omit<Combatant, 'id'>
+export type CombatAttackSeed = Omit<CombatAttack, 'id'>
+export type CombatantSeed = Omit<Combatant, 'id' | 'attacks'> & {
+  attacks: CombatAttackSeed[]
+}
 
 type CombatantRow = {
   id: string
@@ -16,6 +25,24 @@ type CombatantRow = {
   is_active: boolean
   sort_order: number
   controller_user_id: string | null
+  dex_die: DieSize
+  ins_die: DieSize
+  mig_die: DieSize
+  wlp_die: DieSize
+  defense: number
+  magic_defense: number
+}
+
+type CombatAttackRow = {
+  id: string
+  combatant_id: string
+  name: string
+  accuracy_attribute_a: AttributeName
+  accuracy_attribute_b: AttributeName
+  accuracy_bonus: number
+  damage_bonus: number
+  damage_type: string
+  sort_order: number
 }
 
 type RoomBattleRpcRow = {
@@ -58,12 +85,43 @@ type CombatActionRow = {
   actor_display_name: string | null
   target_combatant_id: string | null
   target_name: string | null
-  action_type: 'hp_adjustment'
+  action_type: 'hp_adjustment' | 'attack'
   requested_delta: number
   applied_delta: number
   previous_hp: number
   resulting_hp: number
+  attacker_combatant_id: string | null
+  attacker_name: string | null
+  attack_name: string | null
+  roll_a: number | null
+  roll_b: number | null
+  check_total: number | null
+  high_roll: number | null
+  target_defense: number | null
+  is_hit: boolean | null
+  is_critical: boolean | null
+  is_fumble: boolean | null
+  damage: number | null
+  damage_type: string | null
   created_at: string
+}
+
+type CombatAttackRpcRow = {
+  action_id: string
+  attacker_id: string
+  target_id: string
+  attack_name: string
+  roll_a: number
+  roll_b: number
+  check_total: number
+  high_roll: number
+  target_defense: number
+  is_hit: boolean
+  is_critical: boolean
+  is_fumble: boolean
+  damage: number
+  previous_hp: number
+  resulting_hp: number
 }
 
 export type LoadedBattle = {
@@ -89,11 +147,24 @@ export type CombatAction = {
   actorDisplayName: string | null
   targetCombatantId: string | null
   targetName: string | null
-  actionType: 'hp_adjustment'
+  actionType: 'hp_adjustment' | 'attack'
   requestedDelta: number
   appliedDelta: number
   previousHp: number
   resultingHp: number
+  attackerCombatantId: string | null
+  attackerName: string | null
+  attackName: string | null
+  rollA: number | null
+  rollB: number | null
+  checkTotal: number | null
+  highRoll: number | null
+  targetDefense: number | null
+  isHit: boolean | null
+  isCritical: boolean | null
+  isFumble: boolean | null
+  damage: number | null
+  damageType: string | null
   createdAt: string
 }
 
@@ -114,7 +185,10 @@ async function ensureAnonymousSession() {
   return data.user.id
 }
 
-function toCombatant(row: CombatantRow): Combatant {
+function toCombatant(
+  row: CombatantRow,
+  attacks: CombatAttack[] = [],
+): Combatant {
   return {
     id: row.id,
     name: row.name,
@@ -125,8 +199,27 @@ function toCombatant(row: CombatantRow): Combatant {
     maxMp: row.max_mp,
     ip: row.ip,
     maxIp: row.max_ip,
+    dexDie: row.dex_die,
+    insDie: row.ins_die,
+    migDie: row.mig_die,
+    wlpDie: row.wlp_die,
+    defense: row.defense,
+    magicDefense: row.magic_defense,
+    attacks,
     isActive: row.is_active,
     controllerUserId: row.controller_user_id,
+  }
+}
+
+function toCombatAttack(row: CombatAttackRow): CombatAttack {
+  return {
+    id: row.id,
+    name: row.name,
+    accuracyAttributeA: row.accuracy_attribute_a,
+    accuracyAttributeB: row.accuracy_attribute_b,
+    accuracyBonus: row.accuracy_bonus,
+    damageBonus: row.damage_bonus,
+    damageType: row.damage_type,
   }
 }
 
@@ -143,6 +236,19 @@ function toCombatAction(row: CombatActionRow): CombatAction {
     appliedDelta: row.applied_delta,
     previousHp: row.previous_hp,
     resultingHp: row.resulting_hp,
+    attackerCombatantId: row.attacker_combatant_id,
+    attackerName: row.attacker_name,
+    attackName: row.attack_name,
+    rollA: row.roll_a,
+    rollB: row.roll_b,
+    checkTotal: row.check_total,
+    highRoll: row.high_roll,
+    targetDefense: row.target_defense,
+    isHit: row.is_hit,
+    isCritical: row.is_critical,
+    isFumble: row.is_fumble,
+    damage: row.damage,
+    damageType: row.damage_type,
     createdAt: row.created_at,
   }
 }
@@ -151,14 +257,39 @@ async function loadCombatants(battleId: string) {
   const { data, error } = await supabase
     .from('combatants')
     .select(
-      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id',
+      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, defense, magic_defense',
     )
     .eq('battle_id', battleId)
     .order('sort_order', { ascending: true })
 
   if (error) throw error
 
-  return (data as CombatantRow[]).map(toCombatant)
+  const rows = data as CombatantRow[]
+  if (rows.length === 0) return []
+
+  const { data: attackData, error: attackError } = await supabase
+    .from('combatant_attacks')
+    .select(
+      'id, combatant_id, name, accuracy_attribute_a, accuracy_attribute_b, accuracy_bonus, damage_bonus, damage_type, sort_order',
+    )
+    .in(
+      'combatant_id',
+      rows.map((row) => row.id),
+    )
+    .order('sort_order', { ascending: true })
+
+  if (attackError) throw attackError
+
+  const attacks = attackData as CombatAttackRow[]
+
+  return rows.map((row) =>
+    toCombatant(
+      row,
+      attacks
+        .filter((attack) => attack.combatant_id === row.id)
+        .map(toCombatAttack),
+    ),
+  )
 }
 
 async function seedCombatants(battleId: string, seeds: CombatantSeed[]) {
@@ -172,13 +303,45 @@ async function seedCombatants(battleId: string, seeds: CombatantSeed[]) {
     max_mp: combatant.maxMp,
     ip: combatant.ip,
     max_ip: combatant.maxIp,
+    dex_die: combatant.dexDie,
+    ins_die: combatant.insDie,
+    mig_die: combatant.migDie,
+    wlp_die: combatant.wlpDie,
+    defense: combatant.defense,
+    magic_defense: combatant.magicDefense,
     is_active: combatant.isActive ?? false,
     sort_order: index,
   }))
 
-  const { error } = await supabase.from('combatants').insert(rows)
+  const { data, error } = await supabase
+    .from('combatants')
+    .insert(rows)
+    .select('id, sort_order')
 
   if (error) throw error
+
+  const inserted = data as { id: string; sort_order: number }[]
+  const attackRows = inserted.flatMap((row) => {
+    const seed = seeds[row.sort_order]
+    return seed.attacks.map((attack, index) => ({
+      combatant_id: row.id,
+      name: attack.name,
+      accuracy_attribute_a: attack.accuracyAttributeA,
+      accuracy_attribute_b: attack.accuracyAttributeB,
+      accuracy_bonus: attack.accuracyBonus,
+      damage_bonus: attack.damageBonus,
+      damage_type: attack.damageType,
+      sort_order: index,
+    }))
+  })
+
+  if (attackRows.length === 0) return
+
+  const { error: attackError } = await supabase
+    .from('combatant_attacks')
+    .insert(attackRows)
+
+  if (attackError) throw attackError
 }
 
 async function getRoomCode(roomId: string) {
@@ -386,7 +549,7 @@ export async function loadCombatActions(
   const { data, error } = await supabase
     .from('combat_actions')
     .select(
-      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, created_at',
+      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, created_at',
     )
     .eq('battle_id', battleId)
     .order('created_at', { ascending: false })
@@ -395,6 +558,40 @@ export async function loadCombatActions(
   if (error) throw error
 
   return (data as CombatActionRow[]).map(toCombatAction)
+}
+
+export async function performCombatantAttack(
+  attackId: string,
+  targetId: string,
+) {
+  const { data, error } = await supabase
+    .rpc('perform_combatant_attack', {
+      p_attack_id: attackId,
+      p_target_id: targetId,
+    })
+    .single()
+
+  if (error) throw error
+
+  const row = data as CombatAttackRpcRow
+
+  return {
+    actionId: row.action_id,
+    attackerId: row.attacker_id,
+    targetId: row.target_id,
+    attackName: row.attack_name,
+    rollA: row.roll_a,
+    rollB: row.roll_b,
+    checkTotal: row.check_total,
+    highRoll: row.high_roll,
+    targetDefense: row.target_defense,
+    isHit: row.is_hit,
+    isCritical: row.is_critical,
+    isFumble: row.is_fumble,
+    damage: row.damage,
+    previousHp: row.previous_hp,
+    resultingHp: row.resulting_hp,
+  }
 }
 
 export function subscribeToCombatActions(
