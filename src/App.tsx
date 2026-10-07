@@ -10,6 +10,7 @@ import {
   loadCombatActions,
   loadCurrentPlayerIdentity,
   loadOrCreateBattle,
+  performCombatantAbility,
   performCombatantAttack,
   performGuard,
   savePlayerDisplayName,
@@ -64,6 +65,7 @@ const initialCombatants: CombatantSeed[] = [
         damageType: 'physical',
       },
     ],
+    abilities: [],
     affinities: {
       physical: 'resistant',
       poison: 'immune',
@@ -94,6 +96,18 @@ const initialCombatants: CombatantSeed[] = [
         damageType: 'bolt',
       },
     ],
+    abilities: [
+      {
+        name: 'Pulso Arcano',
+        checkAttributeA: 'ins',
+        checkAttributeB: 'wlp',
+        checkBonus: 0,
+        mpCost: 10,
+        damageBonus: 10,
+        damageType: 'bolt',
+      },
+    ],
+    abilities: [],
     affinities: {
       physical: 'vulnerable',
       poison: 'absorbs',
@@ -153,6 +167,7 @@ const initialCombatants: CombatantSeed[] = [
         damageType: 'physical',
       },
     ],
+    abilities: [],
     affinities: {
       physical: 'resistant',
       bolt: 'vulnerable',
@@ -237,6 +252,45 @@ function combatActionText(action: CombatAction) {
     }
 
     return `${actor} recuperou ${action.appliedDelta} ${resource} de ${combatant}.`
+  }
+
+  if (action.actionType === 'ability') {
+    const caster = action.attackerName ?? 'Combatente'
+    const ability = action.abilityName ?? 'habilidade'
+    const mpSpent =
+      action.previousResource !== null && action.resultingResource !== null
+        ? action.previousResource - action.resultingResource
+        : 0
+
+    if (action.isFumble) {
+      return `${actor} · ${caster} usou ${ability} (${mpSpent} MP) em ${target}: falha crítica.`
+    }
+
+    if (!action.isHit) {
+      return `${actor} · ${caster} usou ${ability} (${mpSpent} MP) em ${target}: errou.`
+    }
+
+    const critical = action.isCritical ? ' Crítico!' : ''
+    const rawDamage = action.damage ?? 0
+
+    if (action.damageAffinity === 'immune') {
+      return `${actor} · ${caster} usou ${ability} em ${target}: acertou, mas o alvo é imune a ${damageTypeLabel(action.damageType)}.${critical}`
+    }
+
+    if (action.damageAffinity === 'absorbs') {
+      return `${actor} · ${caster} usou ${ability} em ${target}: ${rawDamage} de ${damageTypeLabel(action.damageType)}, absorvido pelo alvo (+${Math.max(0, action.appliedDelta)} HP).${critical}`
+    }
+
+    const hpLost = Math.max(0, -action.appliedDelta)
+    const affinity =
+      action.damageAffinity === 'vulnerable'
+        ? ' Vulnerabilidade!'
+        : action.damageAffinity === 'resistant'
+          ? ' Resistência.'
+          : ''
+    const guard = action.guardApplied ? ' Guard ativo.' : ''
+
+    return `${actor} · ${caster} usou ${ability}: ${rawDamage} de ${damageTypeLabel(action.damageType)} → ${hpLost} HP perdidos.${affinity}${guard}${critical}`
   }
 
   if (action.actionType === 'guard') {
@@ -332,6 +386,7 @@ export default function App() {
   const [changingTurnState, setChangingTurnState] = useState(false)
   const [endingTurn, setEndingTurn] = useState(false)
   const [guarding, setGuarding] = useState(false)
+  const [usingAbility, setUsingAbility] = useState(false)
   const [adjustingResource, setAdjustingResource] = useState<
     'MP' | 'IP' | null
   >(null)
@@ -421,6 +476,7 @@ export default function App() {
             ? {
                 ...updatedCombatant,
                 attacks: combatant.attacks,
+                abilities: combatant.abilities,
                 affinities: combatant.affinities,
               }
             : combatant,
@@ -507,6 +563,7 @@ export default function App() {
     (Boolean(selected?.controllerUserId) &&
       selected?.controllerUserId === playerIdentity?.userId)
   const selectedAttack = selected?.attacks[0] ?? null
+  const selectedAbility = selected?.abilities[0] ?? null
   const attackTargets = selected
     ? combatants.filter(
         (combatant) =>
@@ -535,7 +592,8 @@ export default function App() {
           (combatant.lastActedRound ?? 0) < turnState.roundNumber,
       )
     : []
-  const combatActionBusy = attacking || guarding || endingTurn
+  const combatActionBusy =
+    attacking || guarding || usingAbility || endingTurn
 
   useEffect(() => {
     if (!selected) {
@@ -777,6 +835,72 @@ export default function App() {
     }
   }
 
+  async function handleAbility() {
+    if (
+      !selected ||
+      !selectedAbility ||
+      !attackTarget ||
+      !canActSelected ||
+      selected.mp < selectedAbility.mpCost ||
+      connectionStatus !== 'online' ||
+      combatActionBusy
+    ) {
+      return
+    }
+
+    setUsingAbility(true)
+    setErrorMessage(null)
+
+    try {
+      const result = await performCombatantAbility(
+        selectedAbility.id,
+        attackTarget.id,
+        turnState.turnRevision,
+      )
+
+      setCombatants((current) =>
+        current.map((combatant) => {
+          if (combatant.id === result.casterId) {
+            return {
+              ...combatant,
+              mp: result.resultingMp,
+              lastActedRound: result.actedRound,
+              guardStartedRound:
+                combatant.guardStartedRound !== null &&
+                combatant.guardStartedRound !== undefined &&
+                combatant.guardStartedRound < result.actedRound
+                  ? null
+                  : combatant.guardStartedRound,
+            }
+          }
+
+          if (combatant.id === result.targetId) {
+            return { ...combatant, hp: result.resultingHp }
+          }
+
+          return combatant
+        }),
+      )
+
+      setTurnState((current) => ({
+        ...current,
+        started: result.nextSide !== null,
+        roundNumber: result.nextRound,
+        currentSide: result.nextSide,
+        turnRevision: result.nextRevision,
+      }))
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível usar a habilidade.',
+      )
+    } finally {
+      setUsingAbility(false)
+    }
+  }
+
   async function handleAttack() {
     if (
       !selected ||
@@ -960,7 +1084,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Recursos autoritativos · v0.12</span>
+          <span className="eyebrow">Habilidades autoritativas · v0.13</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -1034,9 +1158,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            MP e IP agora também são controlados pelo backend. Jogadores
-            atribuídos podem gastar seus próprios recursos; recuperação manual
-            é restrita ao GM e serve apenas para teste por enquanto.
+            Habilidades ofensivas agora resolvem custo de MP, Magic Check,
+            Magic Defense, dano, Afinidades e consumo de turno em uma única
+            ação autoritativa no backend.
           </p>
 
           <div className="player-session">
@@ -1215,6 +1339,26 @@ export default function App() {
                 ) : (
                   <strong>Sem ataque configurado.</strong>
                 )}
+
+                {selectedAbility ? (
+                  <small>
+                    Habilidade: <strong>{selectedAbility.name}</strong> ·{' '}
+                    {selectedAbility.checkAttributeA.toUpperCase()} d
+                    {attributeDie(
+                      selected,
+                      selectedAbility.checkAttributeA,
+                    )}{' '}
+                    + {selectedAbility.checkAttributeB.toUpperCase()} d
+                    {attributeDie(
+                      selected,
+                      selectedAbility.checkAttributeB,
+                    )}{' '}
+                    {selectedAbility.checkBonus >= 0 ? '+' : ''}
+                    {selectedAbility.checkBonus} · {selectedAbility.mpCost} MP ·
+                    HR +{selectedAbility.damageBonus} ·{' '}
+                    {damageTypeLabel(selectedAbility.damageType)} vs MDEF
+                  </small>
+                ) : null}
               </div>
 
               <label>
@@ -1226,7 +1370,8 @@ export default function App() {
                 >
                   {attackTargets.map((target) => (
                     <option key={target.id} value={target.id}>
-                      {target.name} · DEF {target.defense}
+                      {target.name} · DEF {target.defense} · MDEF{' '}
+                      {target.magicDefense}
                       {selectedAttack
                         ? ` · ${affinityLabel(
                             effectiveAffinity(
@@ -1262,14 +1407,15 @@ export default function App() {
                       {action.roundNumber !== null
                         ? ` · R${action.roundNumber}`
                         : ''}
-                      {action.actionType === 'attack' ? (
+                      {action.actionType === 'attack' ||
+                      action.actionType === 'ability' ? (
                         <>
                           {' '}· Rolagem {action.rollA} + {action.rollB}
                           {action.checkTotal !== null
                             ? ` = ${action.checkTotal}`
                             : ''}
                           {action.targetDefense !== null
-                            ? ` vs DEF ${action.targetDefense}`
+                            ? ` vs ${action.actionType === 'ability' ? 'MDEF' : 'DEF'} ${action.targetDefense}`
                             : ''}
                           {action.damageType
                             ? ` · ${damageTypeLabel(action.damageType)} / ${affinityLabel(action.damageAffinity)}`
@@ -1286,7 +1432,14 @@ export default function App() {
                           {action.previousResource} → {action.resultingResource}
                         </>
                       ) : (
-                        <> {' '}· HP {action.previousHp} → {action.resultingHp}</>
+                        <>
+                          {' '}· HP {action.previousHp} → {action.resultingHp}
+                          {action.actionType === 'ability' &&
+                          action.previousResource !== null &&
+                          action.resultingResource !== null
+                            ? ` · MP ${action.previousResource} → ${action.resultingResource}`
+                            : ''}
+                        </>
                       )}
                     </small>
                   </div>
@@ -1379,8 +1532,24 @@ export default function App() {
               {endingTurn ? 'Encerrando…' : 'Encerrar turno'}
             </button>
 
-            <button type="button" disabled>
-              Habilidade
+            <button
+              type="button"
+              onClick={() => void handleAbility()}
+              disabled={
+                !selected ||
+                !selectedAbility ||
+                !attackTarget ||
+                !canActSelected ||
+                selected.mp < selectedAbility.mpCost ||
+                connectionStatus !== 'online' ||
+                combatActionBusy
+              }
+            >
+              {usingAbility
+                ? 'Usando…'
+                : selectedAbility
+                  ? `Habilidade · ${selectedAbility.mpCost} MP`
+                  : 'Habilidade'}
             </button>
           </div>
 
