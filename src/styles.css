@@ -737,10 +737,6 @@ h2 {
 
 
 .attack-panel {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 14px;
   margin-top: 14px;
   padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -748,9 +744,22 @@ h2 {
   background: rgba(255, 255, 255, 0.035);
 }
 
-.attack-panel__summary {
+.action-builder {
   display: grid;
-  gap: 3px;
+  gap: 12px;
+}
+
+.action-builder__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.action-builder__header > div:first-child,
+.action-builder__details {
+  display: grid;
+  gap: 4px;
 }
 
 .attack-panel__label,
@@ -762,24 +771,57 @@ h2 {
   text-transform: uppercase;
 }
 
-.attack-panel__summary strong {
-  font-size: 0.9rem;
+.action-builder__details strong {
+  font-size: 0.92rem;
 }
 
-.attack-panel__summary small {
+.action-builder__details small {
   color: #8f93a8;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.action-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(96px, 1fr));
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.action-mode button {
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: #8f93a8;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.action-mode button.is-active {
+  color: #f7f5f0;
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.action-mode button:disabled {
+  color: #555866;
+  cursor: not-allowed;
 }
 
 .attack-panel label {
   display: grid;
   gap: 5px;
-  min-width: 210px;
 }
 
 .attack-panel select {
-  min-width: 210px;
-  padding: 8px 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 9px;
   color: #f7f5f0;
@@ -787,21 +829,31 @@ h2 {
   outline: none;
 }
 
+.attack-panel select:focus {
+  border-color: rgba(215, 197, 255, 0.62);
+}
+
 .attack-panel select:disabled {
   color: #6f7280;
   cursor: not-allowed;
 }
 
+.action-target {
+  max-width: 520px;
+}
+
 @media (max-width: 720px) {
-  .attack-panel {
+  .action-builder__header {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .attack-panel label,
-  .attack-panel select {
+  .action-mode {
     width: 100%;
-    min-width: 0;
+  }
+
+  .action-target {
+    max-width: none;
   }
 }
 
@@ -870,9 +922,17 @@ h2 {
 }
 
 
-.combatant__status {
-  display: table;
+.combatant__statuses {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
   margin: -3px auto 9px;
+}
+
+.combatant__status {
+  display: inline-flex;
+  margin: 0;
   padding: 3px 7px;
   border: 1px solid rgba(121, 201, 149, 0.28);
   border-radius: 999px;
@@ -882,4 +942,15 @@ h2 {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+
+.ability-picker {
+  max-width: 520px;
+}
+
+.command-action--primary {
+  font-weight: 800;
+  background: rgba(215, 197, 255, 0.12) !important;
+  border-color: rgba(215, 197, 255, 0.24) !important;
 }
