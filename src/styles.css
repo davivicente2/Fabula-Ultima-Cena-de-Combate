@@ -870,9 +870,17 @@ h2 {
 }
 
 
-.combatant__status {
-  display: table;
+.combatant__statuses {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
   margin: -3px auto 9px;
+}
+
+.combatant__status {
+  display: inline-flex;
+  margin: 0;
   padding: 3px 7px;
   border: 1px solid rgba(121, 201, 149, 0.28);
   border-radius: 999px;
@@ -882,4 +890,26 @@ h2 {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+
+.ability-picker {
+  margin-top: 6px;
+}
+
+.ability-picker select {
+  min-width: 0;
+  width: 100%;
+}
+
+@media (max-width: 980px) {
+  .attack-panel {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .attack-panel__summary {
+    min-width: min(100%, 320px);
+    flex: 1 1 320px;
+  }
 }
