@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
 import { CombatantCard } from './components/CombatantCard'
 import {
+  joinBattleRoom,
   loadOrCreateBattle,
   saveCombatantHp,
+  subscribeToCombatantUpdates,
 } from './lib/battleRepository'
+import type { LoadedBattle } from './lib/battleRepository'
 import type { Combatant } from './types/combat'
 
 const initialCombatants: Omit<Combatant, 'id'>[] = [
@@ -52,16 +56,36 @@ const initialCombatants: Omit<Combatant, 'id'>[] = [
 
 type ConnectionStatus = 'connecting' | 'online' | 'error'
 
+function setRoomInUrl(roomCode: string) {
+  const url = new URL(window.location.href)
+  url.searchParams.set('room', roomCode)
+  window.history.replaceState(null, '', url)
+}
+
 export default function App() {
   const initializationStarted = useRef(false)
 
   const [combatants, setCombatants] = useState<Combatant[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [battleId, setBattleId] = useState<string | null>(null)
   const [battleName, setBattleName] = useState('Carregando batalha…')
+  const [roomCode, setRoomCode] = useState('')
+  const [joinCode, setJoinCode] = useState('')
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>('connecting')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [savingHp, setSavingHp] = useState(false)
+  const [joiningRoom, setJoiningRoom] = useState(false)
+
+  function applyBattle(battle: LoadedBattle) {
+    setCombatants(battle.combatants)
+    setSelectedId(battle.combatants[0]?.id ?? null)
+    setBattleId(battle.id)
+    setBattleName(battle.name)
+    setRoomCode(battle.roomCode)
+    setJoinCode('')
+    setRoomInUrl(battle.roomCode)
+  }
 
   useEffect(() => {
     if (initializationStarted.current) return
@@ -69,11 +93,15 @@ export default function App() {
 
     async function initializeBattle() {
       try {
-        const battle = await loadOrCreateBattle(initialCombatants)
+        const requestedRoomCode = new URL(window.location.href).searchParams.get(
+          'room',
+        )
+        const battle = await loadOrCreateBattle(
+          initialCombatants,
+          requestedRoomCode,
+        )
 
-        setCombatants(battle.combatants)
-        setSelectedId(battle.combatants[0]?.id ?? null)
-        setBattleName(battle.name)
+        applyBattle(battle)
         setConnectionStatus('online')
       } catch (error) {
         console.error(error)
@@ -88,6 +116,20 @@ export default function App() {
 
     void initializeBattle()
   }, [])
+
+  useEffect(() => {
+    if (!battleId || connectionStatus !== 'online') return
+
+    return subscribeToCombatantUpdates(battleId, (updatedCombatant) => {
+      setCombatants((current) =>
+        current.map((combatant) =>
+          combatant.id === updatedCombatant.id
+            ? updatedCombatant
+            : combatant,
+        ),
+      )
+    })
+  }, [battleId, connectionStatus])
 
   const selected = useMemo(
     () => combatants.find((combatant) => combatant.id === selectedId),
@@ -132,6 +174,41 @@ export default function App() {
     }
   }
 
+  async function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (joiningRoom) return
+
+    setJoiningRoom(true)
+    setErrorMessage(null)
+
+    try {
+      const battle = await joinBattleRoom(joinCode, initialCombatants)
+      applyBattle(battle)
+      setConnectionStatus('online')
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Não foi possível entrar na sala.',
+      )
+    } finally {
+      setJoiningRoom(false)
+    }
+  }
+
+  async function copyRoomLink() {
+    if (!roomCode) return
+
+    const url = new URL(window.location.href)
+    url.searchParams.set('room', roomCode)
+
+    try {
+      await navigator.clipboard.writeText(url.toString())
+    } catch (error) {
+      console.error(error)
+      setErrorMessage('Não foi possível copiar o link automaticamente.')
+    }
+  }
+
   const connectionLabel =
     connectionStatus === 'online'
       ? 'Supabase conectado'
@@ -143,13 +220,21 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Persistência Supabase · v0.2</span>
+          <span className="eyebrow">Sala compartilhada · v0.3</span>
           <h1>Cena de Combate</h1>
         </div>
 
-        <div className="connection-pill" data-status={connectionStatus}>
-          <span className="connection-pill__dot" />
-          {connectionLabel}
+        <div className="topbar__status">
+          {roomCode ? (
+            <div className="room-pill">
+              Sala <strong>{roomCode}</strong>
+            </div>
+          ) : null}
+
+          <div className="connection-pill" data-status={connectionStatus}>
+            <span className="connection-pill__dot" />
+            {connectionLabel}
+          </div>
         </div>
       </header>
 
@@ -187,13 +272,49 @@ export default function App() {
       </section>
 
       <section className="command-panel">
-        <div>
+        <div className="command-panel__info">
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            O HP agora é salvo no Supabase. Altere um valor e recarregue a
-            página: o estado deve continuar igual.
+            O HP é persistido no Supabase e alterações da mesma sala são
+            recebidas em tempo real pelos outros navegadores conectados.
           </p>
+
+          <div className="room-controls">
+            <div>
+              <span className="room-controls__label">Sua sala</span>
+              <strong>{roomCode || '—'}</strong>
+              <button
+                type="button"
+                className="room-controls__link"
+                onClick={() => void copyRoomLink()}
+                disabled={!roomCode}
+              >
+                Copiar link
+              </button>
+            </div>
+
+            <form className="room-join" onSubmit={(event) => void handleJoinRoom(event)}>
+              <label htmlFor="room-code">Entrar em outra sala</label>
+              <div>
+                <input
+                  id="room-code"
+                  value={joinCode}
+                  onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                  placeholder="Código da sala"
+                  maxLength={10}
+                  autoComplete="off"
+                />
+                <button
+                  type="submit"
+                  disabled={!joinCode.trim() || joiningRoom}
+                >
+                  {joiningRoom ? 'Entrando…' : 'Entrar'}
+                </button>
+              </div>
+            </form>
+          </div>
+
           {errorMessage ? (
             <p className="connection-error">{errorMessage}</p>
           ) : null}
