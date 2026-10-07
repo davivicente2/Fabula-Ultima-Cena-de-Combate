@@ -1,10 +1,27 @@
-import type { Combatant } from '../types/combat'
+import type { Combatant, StatusEffect } from '../types/combat'
 import { ResourceBar } from './ResourceBar'
 
 type CombatantCardProps = {
   combatant: Combatant
   selected: boolean
   onSelect: (id: string) => void
+}
+
+function statusLabel(status: StatusEffect) {
+  switch (status) {
+    case 'slow':
+      return 'Lento'
+    case 'dazed':
+      return 'Atordoado'
+    case 'weak':
+      return 'Fraco'
+    case 'shaken':
+      return 'Abalado'
+    case 'enraged':
+      return 'Enfurecido'
+    case 'poisoned':
+      return 'Envenenado'
+  }
 }
 
 export function CombatantCard({
@@ -31,10 +48,18 @@ export function CombatantCard({
 
       <strong>{combatant.name}</strong>
 
-      {combatant.guardStartedRound !== null &&
-      combatant.guardStartedRound !== undefined ? (
-        <span className="combatant__status">Guard</span>
-      ) : null}
+      <div className="combatant__statuses">
+        {combatant.guardStartedRound !== null &&
+        combatant.guardStartedRound !== undefined ? (
+          <span className="combatant__status">Guard</span>
+        ) : null}
+
+        {combatant.statuses.map((status) => (
+          <span className="combatant__status" key={status}>
+            {statusLabel(status)}
+          </span>
+        ))}
+      </div>
 
       <div className="combatant__resources">
         <ResourceBar label="HP" value={combatant.hp} max={combatant.maxHp} />
