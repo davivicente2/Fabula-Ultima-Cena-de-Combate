@@ -30,6 +30,12 @@ type BattleRow = {
   room_id: string
 }
 
+type PlayerIdentityRpcRow = {
+  user_id: string
+  role: PlayerRole
+  display_name: string
+}
+
 export type LoadedBattle = {
   id: string
   name: string
@@ -255,10 +261,12 @@ export async function savePlayerDisplayName(
 
   if (error) throw error
 
+  const row = data as PlayerIdentityRpcRow
+
   return {
-    userId: data.user_id as string,
-    role: data.role as PlayerRole,
-    displayName: data.display_name as string,
+    userId: row.user_id,
+    role: row.role,
+    displayName: row.display_name,
   }
 }
 
