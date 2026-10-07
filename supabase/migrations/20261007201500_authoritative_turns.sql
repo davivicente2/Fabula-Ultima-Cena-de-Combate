@@ -15,6 +15,11 @@ alter table public.combatants
   add column if not exists last_acted_round integer not null default 0
     check (last_acted_round >= 0);
 
+-- The old is_active flag was only a visual prototype for "current turn".
+update public.combatants
+set is_active = false
+where is_active = true;
+
 -- Turn state may only be changed through authoritative RPCs.
 revoke update on table public.battles from authenticated;
 grant update (name) on table public.battles to authenticated;
