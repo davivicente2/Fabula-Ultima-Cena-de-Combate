@@ -102,6 +102,28 @@ create policy "Room hosts can delete combatant attacks"
     )
   );
 
+-- Give the current prototype cast distinct placeholder stats so existing
+-- rooms behave like newly created rooms after this migration.
+update public.combatants
+set dex_die = 10, ins_die = 8, mig_die = 8, wlp_die = 8,
+    defense = 11, magic_defense = 10
+where name = 'Aurora';
+
+update public.combatants
+set dex_die = 8, ins_die = 10, mig_die = 6, wlp_die = 10,
+    defense = 9, magic_defense = 11
+where name = 'Cael';
+
+update public.combatants
+set dex_die = 10, ins_die = 6, mig_die = 8, wlp_die = 6,
+    defense = 11, magic_defense = 8
+where name = 'Lobo de Cinzas';
+
+update public.combatants
+set dex_die = 8, ins_die = 8, mig_die = 10, wlp_die = 8,
+    defense = 12, magic_defense = 10
+where name = 'Cavaleiro Rubro';
+
 -- Existing prototype combatants receive a simple placeholder attack.
 insert into public.combatant_attacks (
   combatant_id,
@@ -132,6 +154,40 @@ where not exists (
   from public.combatant_attacks
   where combatant_attacks.combatant_id = combatants.id
 );
+
+update public.combatant_attacks as attacks
+set
+  name = case combatants.name
+    when 'Aurora' then 'Lâmina de Aurora'
+    when 'Cael' then 'Disparo Arcano'
+    when 'Lobo de Cinzas' then 'Mordida'
+    when 'Cavaleiro Rubro' then 'Espada Rubra'
+    else attacks.name
+  end,
+  accuracy_attribute_a = 'dex',
+  accuracy_attribute_b = case combatants.name
+    when 'Cael' then 'ins'
+    else 'mig'
+  end,
+  accuracy_bonus = case combatants.name
+    when 'Lobo de Cinzas' then 0
+    else 1
+  end,
+  damage_bonus = case combatants.name
+    when 'Aurora' then 8
+    when 'Cael' then 8
+    when 'Lobo de Cinzas' then 6
+    when 'Cavaleiro Rubro' then 10
+    else attacks.damage_bonus
+  end
+from public.combatants
+where combatants.id = attacks.combatant_id
+  and combatants.name in (
+    'Aurora',
+    'Cael',
+    'Lobo de Cinzas',
+    'Cavaleiro Rubro'
+  );
 
 -- Generalize the event log so attacks can coexist with direct HP adjustments.
 alter table public.combat_actions
