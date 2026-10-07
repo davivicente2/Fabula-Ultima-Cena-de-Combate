@@ -298,7 +298,7 @@ begin
 
   insert into public.room_members (room_id, user_id, role)
   values (v_room_id, v_user_id, 'player')
-  on conflict (room_id, user_id) do nothing;
+  on conflict on constraint room_members_pkey do nothing;
 
   select battles.id, battles.name
   into v_battle_id, v_battle_name
