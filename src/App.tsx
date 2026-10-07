@@ -13,6 +13,7 @@ import {
   performCombatantAbility,
   performCombatantAttack,
   performGuard,
+  performInventoryItem,
   savePlayerDisplayName,
   startBattleTurns,
   stopBattleTurns,
@@ -37,6 +38,7 @@ import type {
   CombatSide,
   DamageAffinity,
   DamageType,
+  InventoryItem,
   StatusEffect,
 } from './types/combat'
 
@@ -291,9 +293,61 @@ function statusLabel(status: StatusEffect | null | undefined) {
   }
 }
 
+
+function inventoryItemLabel(item: InventoryItem | null | undefined) {
+  switch (item) {
+    case 'remedy':
+      return 'Remedy'
+    case 'elixir':
+      return 'Elixir'
+    case 'tonic':
+      return 'Tonic'
+    default:
+      return 'Item'
+  }
+}
+
+function inventoryItemCost(item: InventoryItem) {
+  return item === 'tonic' ? 2 : 3
+}
+
+function inventoryItemEffect(item: InventoryItem) {
+  switch (item) {
+    case 'remedy':
+      return 'Recupera 50 HP'
+    case 'elixir':
+      return 'Recupera 50 MP'
+    case 'tonic':
+      return 'Remove todos os status'
+  }
+}
+
 function combatActionText(action: CombatAction) {
   const actor = action.actorDisplayName ?? 'Jogador'
   const target = action.targetName ?? 'combatente'
+
+  if (action.actionType === 'inventory') {
+    const user = action.attackerName ?? 'Combatente'
+    const item = inventoryItemLabel(action.inventoryItem)
+    const ipSpent =
+      action.previousIp !== null && action.resultingIp !== null
+        ? action.previousIp - action.resultingIp
+        : 0
+
+    if (action.inventoryItem === 'remedy') {
+      return `${actor} · ${user} usou ${item} (${ipSpent} IP) em ${target}: recuperou ${Math.max(0, action.resultingHp - action.previousHp)} HP.`
+    }
+
+    if (action.inventoryItem === 'elixir') {
+      const recovered =
+        action.previousResource !== null && action.resultingResource !== null
+          ? action.resultingResource - action.previousResource
+          : 0
+      return `${actor} · ${user} usou ${item} (${ipSpent} IP) em ${target}: recuperou ${Math.max(0, recovered)} MP.`
+    }
+
+    return `${actor} · ${user} usou ${item} (${ipSpent} IP) em ${target}: removeu ${action.statusesRemoved ?? 0} status.`
+  }
 
   if (action.actionType === 'resource_adjustment') {
     const resource = action.resourceName?.toUpperCase() ?? 'Recurso'
@@ -451,13 +505,18 @@ export default function App() {
   const [assigningController, setAssigningController] = useState(false)
   const [attacking, setAttacking] = useState(false)
   const [attackTargetId, setAttackTargetId] = useState('')
-  const [actionMode, setActionMode] = useState<'attack' | 'ability'>('attack')
+  const [actionMode, setActionMode] =
+    useState<'attack' | 'ability' | 'inventory'>('attack')
   const [selectedAbilityId, setSelectedAbilityId] = useState('')
   const [abilityTargetId, setAbilityTargetId] = useState('')
+  const [selectedInventoryItem, setSelectedInventoryItem] =
+    useState<InventoryItem>('remedy')
+  const [inventoryTargetId, setInventoryTargetId] = useState('')
   const [changingTurnState, setChangingTurnState] = useState(false)
   const [endingTurn, setEndingTurn] = useState(false)
   const [guarding, setGuarding] = useState(false)
   const [usingAbility, setUsingAbility] = useState(false)
+  const [usingInventory, setUsingInventory] = useState(false)
   const [adjustingResource, setAdjustingResource] = useState<
     'MP' | 'IP' | null
   >(null)
@@ -658,10 +717,27 @@ export default function App() {
   const abilityTarget = abilityTargets.find(
     (combatant) => combatant.id === abilityTargetId,
   )
+  const inventoryTargets = selected
+    ? combatants.filter(
+        (combatant) =>
+          combatant.side === selected.side && combatant.hp > 0,
+      )
+    : []
+  const inventoryTarget = inventoryTargets.find(
+    (combatant) => combatant.id === inventoryTargetId,
+  )
   const activeTarget =
-    actionMode === 'attack' ? attackTarget : abilityTarget
+    actionMode === 'attack'
+      ? attackTarget
+      : actionMode === 'ability'
+        ? abilityTarget
+        : inventoryTarget
   const activeTargets =
-    actionMode === 'attack' ? attackTargets : abilityTargets
+    actionMode === 'attack'
+      ? attackTargets
+      : actionMode === 'ability'
+        ? abilityTargets
+        : inventoryTargets
   const selectedHasActed =
     Boolean(selected) &&
     turnState.started &&
@@ -682,7 +758,7 @@ export default function App() {
       )
     : []
   const combatActionBusy =
-    attacking || guarding || usingAbility || endingTurn
+    attacking || guarding || usingAbility || usingInventory || endingTurn
 
   useEffect(() => {
     if (!selected) {
@@ -739,6 +815,22 @@ export default function App() {
       setAbilityTargetId(abilityTargets[0]?.id ?? '')
     }
   }, [selectedAbility, abilityTargets, abilityTargetId])
+
+
+  useEffect(() => {
+    if (!selected) {
+      setInventoryTargetId('')
+      return
+    }
+
+    if (!inventoryTargets.some((combatant) => combatant.id === inventoryTargetId)) {
+      setInventoryTargetId(
+        inventoryTargets.find((combatant) => combatant.id === selected.id)?.id ??
+          inventoryTargets[0]?.id ??
+          '',
+      )
+    }
+  }, [selected, inventoryTargets, inventoryTargetId])
 
   async function handleStartTurns(firstSide: CombatSide) {
     if (!battleId || playerIdentity?.role !== 'host' || changingTurnState) {
@@ -961,6 +1053,89 @@ export default function App() {
       )
     } finally {
       setSavingHp(false)
+    }
+  }
+
+  async function handleInventory() {
+    if (
+      !selected ||
+      !inventoryTarget ||
+      !canActSelected ||
+      selected.ip < inventoryItemCost(selectedInventoryItem) ||
+      connectionStatus !== 'online' ||
+      combatActionBusy
+    ) {
+      return
+    }
+
+    setUsingInventory(true)
+    setErrorMessage(null)
+
+    try {
+      const result = await performInventoryItem(
+        selected.id,
+        inventoryTarget.id,
+        selectedInventoryItem,
+        turnState.turnRevision,
+      )
+
+      setCombatants((current) =>
+        current.map((combatant) => {
+          let next = combatant
+
+          if (combatant.id === result.combatantId) {
+            next = {
+              ...next,
+              ip: result.resultingIp,
+              lastActedRound: result.actedRound,
+              guardStartedRound:
+                next.guardStartedRound !== null &&
+                next.guardStartedRound !== undefined &&
+                next.guardStartedRound < result.actedRound
+                  ? null
+                  : next.guardStartedRound,
+            }
+          }
+
+          if (combatant.id === result.targetId) {
+            const clearedStatuses = result.targetStatuses.length === 0
+
+            next = {
+              ...next,
+              hp: result.resultingHp,
+              mp: result.resultingMp,
+              statuses: result.targetStatuses,
+              ...(clearedStatuses
+                ? {
+                    dexDie: next.baseDexDie,
+                    insDie: next.baseInsDie,
+                    migDie: next.baseMigDie,
+                    wlpDie: next.baseWlpDie,
+                  }
+                : {}),
+            }
+          }
+
+          return next
+        }),
+      )
+
+      setTurnState((current) => ({
+        ...current,
+        started: result.nextSide !== null,
+        roundNumber: result.nextRound,
+        currentSide: result.nextSide,
+        turnRevision: result.nextRevision,
+      }))
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível usar o item de inventário.',
+      )
+    } finally {
+      setUsingInventory(false)
     }
   }
 
@@ -1225,7 +1400,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Cura e status · v0.14</span>
+          <span className="eyebrow">Inventory autoritativo · v0.15</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -1299,9 +1474,8 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            Habilidades agora podem causar dano, curar ou aplicar status. Os
-            status reduzem os dados de atributo efetivos e continuam
-            sincronizados como parte do combatente.
+            A ação Inventory agora gasta IP no backend e aplica Remedy,
+            Elixir ou Tonic no mesmo fluxo autoritativo de turno.
           </p>
 
           <div className="player-session">
@@ -1463,7 +1637,7 @@ export default function App() {
 
                   <div
                     className="action-mode"
-                    aria-label="Tipo de ação ofensiva"
+                    aria-label="Tipo de ação"
                   >
                     <button
                       type="button"
@@ -1482,6 +1656,14 @@ export default function App() {
                       }
                     >
                       Habilidade
+                    </button>
+                    <button
+                      type="button"
+                      className={actionMode === 'inventory' ? 'is-active' : ''}
+                      onClick={() => setActionMode('inventory')}
+                      disabled={combatActionBusy}
+                    >
+                      Inventory
                     </button>
                   </div>
                 </div>
@@ -1512,7 +1694,7 @@ export default function App() {
                       <strong>Sem ataque configurado.</strong>
                     )}
                   </div>
-                ) : (
+                ) : actionMode === 'ability' ? (
                   <div className="action-builder__details">
                     {selected.abilities.length > 0 ? (
                       <label className="ability-picker">
@@ -1575,19 +1757,50 @@ export default function App() {
                       </small>
                     ) : null}
                   </div>
+                ) : (
+                  <div className="action-builder__details">
+                    <label className="ability-picker">
+                      Consumível
+                      <select
+                        value={selectedInventoryItem}
+                        onChange={(event) =>
+                          setSelectedInventoryItem(
+                            event.target.value as InventoryItem,
+                          )
+                        }
+                        disabled={!canActSelected || combatActionBusy}
+                      >
+                        <option value="remedy">Remedy · 3 IP</option>
+                        <option value="elixir">Elixir · 3 IP</option>
+                        <option value="tonic">Tonic · 2 IP</option>
+                      </select>
+                    </label>
+
+                    <small>
+                      {inventoryItemEffect(selectedInventoryItem)} ·{' '}
+                      {inventoryItemCost(selectedInventoryItem)} IP · você tem{' '}
+                      {selected.ip}/{selected.maxIp} IP
+                    </small>
+                  </div>
                 )}
 
                 <label className="action-target">
                   Alvo
                   <select
                     value={
-                      actionMode === 'attack' ? attackTargetId : abilityTargetId
+                      actionMode === 'attack'
+                        ? attackTargetId
+                        : actionMode === 'ability'
+                          ? abilityTargetId
+                          : inventoryTargetId
                     }
                     onChange={(event) => {
                       if (actionMode === 'attack') {
                         setAttackTargetId(event.target.value)
-                      } else {
+                      } else if (actionMode === 'ability') {
                         setAbilityTargetId(event.target.value)
+                      } else {
+                        setInventoryTargetId(event.target.value)
                       }
                     }}
                     disabled={
@@ -1600,7 +1813,9 @@ export default function App() {
                       <option key={target.id} value={target.id}>
                         {actionMode === 'attack'
                           ? `${target.name} · DEF ${target.defense} · MDEF ${target.magicDefense}`
-                          : `${target.name} · HP ${target.hp}/${target.maxHp} · MDEF ${target.magicDefense}`}
+                          : actionMode === 'ability'
+                            ? `${target.name} · HP ${target.hp}/${target.maxHp} · MDEF ${target.magicDefense}`
+                            : `${target.name} · HP ${target.hp}/${target.maxHp} · MP ${target.mp}/${target.maxMp} · ${target.statuses.length} status`}
                       </option>
                     ))}
                   </select>
@@ -1650,6 +1865,24 @@ export default function App() {
                         <>
                           {' '}· {action.resourceName.toUpperCase()}{' '}
                           {action.previousResource} → {action.resultingResource}
+                        </>
+                      ) : action.actionType === 'inventory' ? (
+                        <>
+                          {action.previousIp !== null &&
+                          action.resultingIp !== null
+                            ? ` · IP ${action.previousIp} → ${action.resultingIp}`
+                            : ''}
+                          {action.inventoryItem === 'remedy'
+                            ? ` · HP ${action.previousHp} → ${action.resultingHp}`
+                            : ''}
+                          {action.inventoryItem === 'elixir' &&
+                          action.previousResource !== null &&
+                          action.resultingResource !== null
+                            ? ` · MP ${action.previousResource} → ${action.resultingResource}`
+                            : ''}
+                          {action.inventoryItem === 'tonic'
+                            ? ` · Status removidos: ${action.statusesRemoved ?? 0}`
+                            : ''}
                         </>
                       ) : (
                         <>
@@ -1725,7 +1958,13 @@ export default function App() {
               className="command-action--primary"
               type="button"
               onClick={() =>
-                void (actionMode === 'attack' ? handleAttack() : handleAbility())
+                void (
+                  actionMode === 'attack'
+                    ? handleAttack()
+                    : actionMode === 'ability'
+                      ? handleAbility()
+                      : handleInventory()
+                )
               }
               disabled={
                 !selected ||
@@ -1735,19 +1974,26 @@ export default function App() {
                 combatActionBusy ||
                 (actionMode === 'attack'
                   ? !selectedAttack
-                  : !selectedAbility ||
-                    selected.mp < selectedAbility.mpCost)
+                  : actionMode === 'ability'
+                    ? !selectedAbility ||
+                      selected.mp < selectedAbility.mpCost
+                    : selected.ip <
+                      inventoryItemCost(selectedInventoryItem))
               }
             >
               {actionMode === 'attack'
                 ? attacking
                   ? 'Atacando…'
                   : selectedAttack?.name ?? 'Atacar'
-                : usingAbility
-                  ? 'Usando…'
-                  : selectedAbility
-                    ? `${selectedAbility.name} · ${selectedAbility.mpCost} MP`
-                    : 'Habilidade'}
+                : actionMode === 'ability'
+                  ? usingAbility
+                    ? 'Usando…'
+                    : selectedAbility
+                      ? `${selectedAbility.name} · ${selectedAbility.mpCost} MP`
+                      : 'Habilidade'
+                  : usingInventory
+                    ? 'Usando item…'
+                    : `${inventoryItemLabel(selectedInventoryItem)} · ${inventoryItemCost(selectedInventoryItem)} IP`}
             </button>
 
             <button
