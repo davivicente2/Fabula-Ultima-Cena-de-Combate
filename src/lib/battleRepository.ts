@@ -15,6 +15,7 @@ type CombatantRow = {
   max_ip: number
   is_active: boolean
   sort_order: number
+  controller_user_id: string | null
 }
 
 type RoomBattleRpcRow = {
@@ -34,6 +35,11 @@ type PlayerIdentityRpcRow = {
   user_id: string
   role: PlayerRole
   display_name: string
+}
+
+type CombatantAssignmentRpcRow = {
+  combatant_id: string
+  controller_user_id: string | null
 }
 
 export type LoadedBattle = {
@@ -81,6 +87,7 @@ function toCombatant(row: CombatantRow): Combatant {
     ip: row.ip,
     maxIp: row.max_ip,
     isActive: row.is_active,
+    controllerUserId: row.controller_user_id,
   }
 }
 
@@ -88,7 +95,7 @@ async function loadCombatants(battleId: string) {
   const { data, error } = await supabase
     .from('combatants')
     .select(
-      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order',
+      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id',
     )
     .eq('battle_id', battleId)
     .order('sort_order', { ascending: true })
@@ -267,6 +274,27 @@ export async function savePlayerDisplayName(
     userId: row.user_id,
     role: row.role,
     displayName: row.display_name,
+  }
+}
+
+export async function assignCombatantController(
+  combatantId: string,
+  userId: string | null,
+) {
+  const { data, error } = await supabase
+    .rpc('assign_combatant_controller', {
+      p_combatant_id: combatantId,
+      p_user_id: userId,
+    })
+    .single()
+
+  if (error) throw error
+
+  const row = data as CombatantAssignmentRpcRow
+
+  return {
+    combatantId: row.combatant_id,
+    controllerUserId: row.controller_user_id,
   }
 }
 
