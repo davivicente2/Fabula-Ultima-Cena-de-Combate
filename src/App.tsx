@@ -23,7 +23,7 @@ import {
   subscribeToRoomPresence,
 } from './lib/presence'
 import type { OnlinePlayer } from './lib/presence'
-import type { Combatant } from './types/combat'
+import type { AttributeName, Combatant } from './types/combat'
 
 const initialCombatants: CombatantSeed[] = [
   {
@@ -174,6 +174,19 @@ function combatActionText(action: CombatAction) {
   return `${actor} curou ${target} em ${action.appliedDelta} HP.`
 }
 
+function attributeDie(combatant: Combatant, attribute: AttributeName) {
+  switch (attribute) {
+    case 'dex':
+      return combatant.dexDie
+    case 'ins':
+      return combatant.insDie
+    case 'mig':
+      return combatant.migDie
+    case 'wlp':
+      return combatant.wlpDie
+  }
+}
+
 function combatActionTime(createdAt: string) {
   return new Date(createdAt).toLocaleTimeString('pt-BR', {
     hour: '2-digit',
@@ -268,7 +281,7 @@ export default function App() {
       setCombatants((current) =>
         current.map((combatant) =>
           combatant.id === updatedCombatant.id
-            ? updatedCombatant
+            ? { ...updatedCombatant, attacks: combatant.attacks }
             : combatant,
         ),
       )
@@ -743,21 +756,15 @@ export default function App() {
                     <strong>{selectedAttack.name}</strong>
                     <small>
                       {selectedAttack.accuracyAttributeA.toUpperCase()} d
-                      {selected[
-                        `${selectedAttack.accuracyAttributeA}Die` as
-                          | 'dexDie'
-                          | 'insDie'
-                          | 'migDie'
-                          | 'wlpDie'
-                      ]}{' '}
+                      {attributeDie(
+                        selected,
+                        selectedAttack.accuracyAttributeA,
+                      )}{' '}
                       + {selectedAttack.accuracyAttributeB.toUpperCase()} d
-                      {selected[
-                        `${selectedAttack.accuracyAttributeB}Die` as
-                          | 'dexDie'
-                          | 'insDie'
-                          | 'migDie'
-                          | 'wlpDie'
-                      ]}{' '}
+                      {attributeDie(
+                        selected,
+                        selectedAttack.accuracyAttributeB,
+                      )}{' '}
                       {selectedAttack.accuracyBonus >= 0 ? '+' : ''}
                       {selectedAttack.accuracyBonus} · HR +
                       {selectedAttack.damageBonus}
