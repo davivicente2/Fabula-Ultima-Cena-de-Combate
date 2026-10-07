@@ -2079,6 +2079,8 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+
           {playerIdentity?.role === 'host' ? (
             <details className="scene-manager">
               <summary>Gerenciar participantes da cena</summary>
@@ -2335,8 +2337,6 @@ export default function App() {
               </form>
             </details>
           ) : null}
-
-          </div>
 
           {errorMessage ? (
             <p className="connection-error">{errorMessage}</p>
