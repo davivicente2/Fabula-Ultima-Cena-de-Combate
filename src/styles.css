@@ -954,3 +954,88 @@ h2 {
   background: rgba(215, 197, 255, 0.12) !important;
   border-color: rgba(215, 197, 255, 0.24) !important;
 }
+
+
+.scene-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(240px, 1fr) minmax(220px, 0.8fr);
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.scene-panel__current,
+.scene-panel__create,
+.scene-panel__move {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scene-panel__label,
+.scene-panel label {
+  color: #8f93a8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.scene-panel select,
+.scene-panel input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  color: #f7f5f0;
+  background: #171a26;
+  outline: none;
+}
+
+.scene-panel select:focus,
+.scene-panel input:focus {
+  border-color: rgba(215, 197, 255, 0.62);
+}
+
+.scene-panel small {
+  color: #7f8294;
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.scene-panel__create > div {
+  display: flex;
+  gap: 6px;
+}
+
+.scene-panel__create button {
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  color: #f7f5f0;
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+
+.scene-panel button:disabled,
+.scene-panel select:disabled {
+  color: #6f7280;
+  cursor: not-allowed;
+}
+
+@media (max-width: 980px) {
+  .scene-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .scene-panel__create > div {
+    flex-direction: column;
+  }
+}

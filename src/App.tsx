@@ -5,8 +5,11 @@ import {
   adjustCombatantResource,
   applyCombatantHpDelta,
   assignCombatantController,
+  createBattleScene,
   endCombatantTurn,
   joinBattleRoom,
+  listBattleScenes,
+  loadBattleScene,
   loadCombatActions,
   loadCurrentPlayerIdentity,
   loadOrCreateBattle,
@@ -14,14 +17,18 @@ import {
   performCombatantAttack,
   performGuard,
   performInventoryItem,
+  moveCombatantToScene,
   savePlayerDisplayName,
   startBattleTurns,
   stopBattleTurns,
+  switchBattleScene,
+  subscribeToActiveBattle,
   subscribeToBattleTurnState,
   subscribeToCombatActions,
   subscribeToCombatantUpdates,
 } from './lib/battleRepository'
 import type {
+  BattleScene,
   BattleTurnState,
   CombatAction,
   CombatantSeed,
@@ -495,6 +502,11 @@ export default function App() {
   const [battleId, setBattleId] = useState<string | null>(null)
   const [roomId, setRoomId] = useState<string | null>(null)
   const [battleName, setBattleName] = useState('Carregando batalha…')
+  const [scenes, setScenes] = useState<BattleScene[]>([])
+  const [newSceneName, setNewSceneName] = useState('')
+  const [switchingScene, setSwitchingScene] = useState(false)
+  const [creatingScene, setCreatingScene] = useState(false)
+  const [movingCombatant, setMovingCombatant] = useState(false)
   const [roomCode, setRoomCode] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [connectionStatus, setConnectionStatus] =
@@ -548,6 +560,7 @@ export default function App() {
     setCombatActions([])
     setTurnState(battle.turnState)
     setRoomInUrl(battle.roomCode)
+    setScenes(await listBattleScenes(battle.roomId))
 
     let identity = await loadCurrentPlayerIdentity(battle.roomId)
     const storedName = localStorage.getItem(storedPlayerNameKey)?.trim()
@@ -595,6 +608,36 @@ export default function App() {
 
     return subscribeToBattleTurnState(battleId, setTurnState)
   }, [battleId, connectionStatus])
+
+
+  useEffect(() => {
+    if (
+      !roomId ||
+      !playerIdentity?.userId ||
+      connectionStatus !== 'online'
+    ) {
+      return
+    }
+
+    return subscribeToActiveBattle(
+      roomId,
+      playerIdentity.userId,
+      (nextBattleId) => {
+        if (nextBattleId === battleId) return
+
+        void loadBattleScene(nextBattleId)
+          .then((battle) => applyBattle(battle))
+          .catch((error) => {
+            console.error(error)
+            setErrorMessage(
+              error instanceof Error
+                ? error.message
+                : 'Não foi possível acompanhar a mudança de cena.',
+            )
+          })
+      },
+    )
+  }, [roomId, playerIdentity?.userId, battleId, connectionStatus])
 
   useEffect(() => {
     if (!battleId || connectionStatus !== 'online') return
@@ -831,6 +874,99 @@ export default function App() {
       )
     }
   }, [selected, inventoryTargets, inventoryTargetId])
+
+  async function handleSwitchScene(nextBattleId: string) {
+    if (!nextBattleId || nextBattleId === battleId || switchingScene) return
+
+    setSwitchingScene(true)
+    setErrorMessage(null)
+
+    try {
+      const battle = await switchBattleScene(nextBattleId)
+      await applyBattle(battle)
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível trocar de cena.',
+      )
+    } finally {
+      setSwitchingScene(false)
+    }
+  }
+
+  async function handleCreateScene(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (
+      !roomId ||
+      playerIdentity?.role !== 'host' ||
+      creatingScene
+    ) {
+      return
+    }
+
+    setCreatingScene(true)
+    setErrorMessage(null)
+
+    try {
+      const battle = await createBattleScene(
+        roomId,
+        newSceneName.trim() || 'Nova cena',
+      )
+      setNewSceneName('')
+      await applyBattle(battle)
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível criar a cena.',
+      )
+    } finally {
+      setCreatingScene(false)
+    }
+  }
+
+  async function handleMoveCombatant(destinationBattleId: string) {
+    if (
+      !selected ||
+      !battleId ||
+      !destinationBattleId ||
+      destinationBattleId === battleId ||
+      playerIdentity?.role !== 'host' ||
+      movingCombatant
+    ) {
+      return
+    }
+
+    setMovingCombatant(true)
+    setErrorMessage(null)
+
+    try {
+      const movedId = selected.id
+      await moveCombatantToScene(movedId, destinationBattleId)
+
+      setCombatants((current) =>
+        current.filter((combatant) => combatant.id !== movedId),
+      )
+      setSelectedId((current) => {
+        if (current !== movedId) return current
+        return combatants.find((combatant) => combatant.id !== movedId)?.id ?? null
+      })
+      setScenes(await listBattleScenes(roomId!))
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível mover o combatente.',
+      )
+    } finally {
+      setMovingCombatant(false)
+    }
+  }
 
   async function handleStartTurns(firstSide: CombatSide) {
     if (!battleId || playerIdentity?.role !== 'host' || changingTurnState) {
@@ -1328,7 +1464,7 @@ export default function App() {
     setOnlinePlayers([])
 
     try {
-      const battle = await joinBattleRoom(joinCode, initialCombatants)
+      const battle = await joinBattleRoom(joinCode)
       await applyBattle(battle)
       setConnectionStatus('online')
     } catch (error) {
@@ -1400,7 +1536,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Inventory autoritativo · v0.15</span>
+          <span className="eyebrow">Múltiplas cenas · v0.16</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -1474,8 +1610,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            A ação Inventory agora gasta IP no backend e aplica Remedy,
-            Elixir ou Tonic no mesmo fluxo autoritativo de turno.
+            A sala agora pode ter várias cenas em paralelo. Cada jogador
+            mantém sua própria cena ativa e o GM pode mover combatentes sem
+            deslocar o restante do grupo.
           </p>
 
           <div className="player-session">
@@ -1537,6 +1674,83 @@ export default function App() {
                 )}
               </div>
             </div>
+          </div>
+
+          <div className="scene-panel">
+            <div className="scene-panel__current">
+              <span className="scene-panel__label">Cena ativa</span>
+              <select
+                value={battleId ?? ''}
+                onChange={(event) =>
+                  void handleSwitchScene(event.target.value)
+                }
+                disabled={switchingScene || scenes.length === 0}
+              >
+                {scenes.map((scene) => (
+                  <option key={scene.id} value={scene.id}>
+                    {scene.name}
+                    {scene.conflictStarted
+                      ? ` · R${scene.roundNumber}`
+                      : ''}
+                  </option>
+                ))}
+              </select>
+              <small>
+                Trocar de cena muda apenas a sua visualização.
+              </small>
+            </div>
+
+            {playerIdentity?.role === 'host' ? (
+              <>
+                <form
+                  className="scene-panel__create"
+                  onSubmit={(event) => void handleCreateScene(event)}
+                >
+                  <label htmlFor="scene-name">Nova cena</label>
+                  <div>
+                    <input
+                      id="scene-name"
+                      value={newSceneName}
+                      onChange={(event) => setNewSceneName(event.target.value)}
+                      placeholder="Ex.: Câmara da armadilha"
+                      maxLength={64}
+                      autoComplete="off"
+                    />
+                    <button type="submit" disabled={creatingScene}>
+                      {creatingScene ? 'Criando…' : 'Criar'}
+                    </button>
+                  </div>
+                </form>
+
+                {selected && scenes.length > 1 ? (
+                  <label className="scene-panel__move">
+                    Mover {selected.name}
+                    <select
+                      value=""
+                      onChange={(event) => {
+                        const destination = event.target.value
+                        if (destination) {
+                          void handleMoveCombatant(destination)
+                        }
+                      }}
+                      disabled={movingCombatant}
+                    >
+                      <option value="">Escolher cena…</option>
+                      {scenes
+                        .filter((scene) => scene.id !== battleId)
+                        .map((scene) => (
+                          <option key={scene.id} value={scene.id}>
+                            {scene.name}
+                          </option>
+                        ))}
+                    </select>
+                    <small>
+                      Se houver jogador atribuído, ele acompanha o personagem.
+                    </small>
+                  </label>
+                ) : null}
+              </>
+            ) : null}
           </div>
 
           <div className="turn-panel">
