@@ -7,6 +7,7 @@ import type {
   DamageAffinity,
   DamageType,
   DieSize,
+  ResourceName,
 } from '../types/combat'
 
 export type CombatAttackSeed = Omit<CombatAttack, 'id'>
@@ -100,6 +101,16 @@ type CombatantAssignmentRpcRow = {
   controller_user_id: string | null
 }
 
+type CombatantResourceActionRpcRow = {
+  action_id: string | null
+  combatant_id: string
+  resource_name: 'mp' | 'ip'
+  previous_value: number
+  value: number
+  max_value: number
+  applied_delta: number
+}
+
 type CombatantHpActionRpcRow = {
   action_id: string | null
   combatant_id: string
@@ -116,7 +127,12 @@ type CombatActionRow = {
   actor_display_name: string | null
   target_combatant_id: string | null
   target_name: string | null
-  action_type: 'hp_adjustment' | 'attack' | 'turn_end' | 'guard'
+  action_type:
+    | 'hp_adjustment'
+    | 'attack'
+    | 'turn_end'
+    | 'guard'
+    | 'resource_adjustment'
   requested_delta: number
   applied_delta: number
   previous_hp: number
@@ -137,6 +153,9 @@ type CombatActionRow = {
   damage_affinity: DamageAffinity | 'neutral' | null
   round_number: number | null
   guard_applied: boolean | null
+  resource_name: 'mp' | 'ip' | null
+  previous_resource: number | null
+  resulting_resource: number | null
   created_at: string
 }
 
@@ -191,7 +210,12 @@ export type CombatAction = {
   actorDisplayName: string | null
   targetCombatantId: string | null
   targetName: string | null
-  actionType: 'hp_adjustment' | 'attack' | 'turn_end' | 'guard'
+  actionType:
+    | 'hp_adjustment'
+    | 'attack'
+    | 'turn_end'
+    | 'guard'
+    | 'resource_adjustment'
   requestedDelta: number
   appliedDelta: number
   previousHp: number
@@ -212,6 +236,9 @@ export type CombatAction = {
   damageAffinity: DamageAffinity | 'neutral' | null
   roundNumber: number | null
   guardApplied: boolean | null
+  resourceName: 'mp' | 'ip' | null
+  previousResource: number | null
+  resultingResource: number | null
   createdAt: string
 }
 
@@ -303,6 +330,9 @@ function toCombatAction(row: CombatActionRow): CombatAction {
     damageAffinity: row.damage_affinity,
     roundNumber: row.round_number,
     guardApplied: row.guard_applied,
+    resourceName: row.resource_name,
+    previousResource: row.previous_resource,
+    resultingResource: row.resulting_resource,
     createdAt: row.created_at,
   }
 }
@@ -665,6 +695,34 @@ export async function applyCombatantHpDelta(
   }
 }
 
+export async function adjustCombatantResource(
+  combatantId: string,
+  resource: Extract<ResourceName, 'MP' | 'IP'>,
+  delta: number,
+) {
+  const { data, error } = await supabase
+    .rpc('adjust_combatant_resource', {
+      p_combatant_id: combatantId,
+      p_resource: resource.toLowerCase(),
+      p_delta: delta,
+    })
+    .single()
+
+  if (error) throw error
+
+  const row = data as CombatantResourceActionRpcRow
+
+  return {
+    actionId: row.action_id,
+    combatantId: row.combatant_id,
+    resourceName: row.resource_name,
+    previousValue: row.previous_value,
+    value: row.value,
+    maxValue: row.max_value,
+    appliedDelta: row.applied_delta,
+  }
+}
+
 export async function loadCombatActions(
   battleId: string,
   limit = 20,
@@ -672,7 +730,7 @@ export async function loadCombatActions(
   const { data, error } = await supabase
     .from('combat_actions')
     .select(
-      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, guard_applied, created_at',
+      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, guard_applied, resource_name, previous_resource, resulting_resource, created_at',
     )
     .eq('battle_id', battleId)
     .order('created_at', { ascending: false })
