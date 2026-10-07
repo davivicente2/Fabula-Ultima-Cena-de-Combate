@@ -954,3 +954,120 @@ h2 {
   background: rgba(215, 197, 255, 0.12) !important;
   border-color: rgba(215, 197, 255, 0.24) !important;
 }
+
+
+.scene-manager {
+  margin-top: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.scene-manager > summary {
+  padding: 12px 14px;
+  cursor: pointer;
+  color: #d9dbe7;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scene-manager[open] > summary {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.scene-manager__notice {
+  margin: 12px 14px 0;
+  color: #c6a9a9;
+  font-size: 0.78rem;
+}
+
+.scene-manager__form {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.scene-manager__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(90px, 1fr));
+  gap: 10px;
+}
+
+.scene-manager__grid label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: #8f93a8;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.scene-manager__grid input,
+.scene-manager__grid select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  color: #f7f5f0;
+  background: #171a26;
+  outline: none;
+}
+
+.scene-manager__grid input:focus,
+.scene-manager__grid select:focus {
+  border-color: rgba(215, 197, 255, 0.62);
+}
+
+.scene-manager__wide {
+  grid-column: span 2;
+}
+
+.scene-manager__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scene-manager__actions button {
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  color: #f7f5f0;
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+
+.scene-manager__actions button:disabled {
+  color: #6f7280;
+  cursor: not-allowed;
+}
+
+.scene-manager__danger {
+  border-color: rgba(217, 116, 116, 0.25) !important;
+  color: #d9a0a0 !important;
+}
+
+@media (max-width: 900px) {
+  .scene-manager__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .scene-manager__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .scene-manager__wide {
+    grid-column: auto;
+  }
+
+  .scene-manager__actions {
+    flex-direction: column;
+  }
+}

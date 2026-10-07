@@ -5,8 +5,11 @@ import {
   adjustCombatantResource,
   applyCombatantHpDelta,
   assignCombatantController,
+  createSceneCombatant,
+  deleteSceneCombatant,
   endCombatantTurn,
   joinBattleRoom,
+  loadBattleCombatants,
   loadCombatActions,
   loadCurrentPlayerIdentity,
   loadOrCreateBattle,
@@ -19,6 +22,7 @@ import {
   stopBattleTurns,
   subscribeToBattleTurnState,
   subscribeToCombatActions,
+  subscribeToCombatantRoster,
   subscribeToCombatantUpdates,
 } from './lib/battleRepository'
 import type {
@@ -26,6 +30,7 @@ import type {
   CombatAction,
   CombatantSeed,
   LoadedBattle,
+  NewSceneCombatant,
   PlayerIdentity,
 } from './lib/battleRepository'
 import {
@@ -212,6 +217,27 @@ const initialCombatants: CombatantSeed[] = [
 type ConnectionStatus = 'connecting' | 'online' | 'error'
 
 const storedPlayerNameKey = 'fabula-player-name'
+
+
+const defaultSceneCombatant: NewSceneCombatant = {
+  name: '',
+  side: 'enemies',
+  maxHp: 30,
+  maxMp: 10,
+  maxIp: 0,
+  dexDie: 8,
+  insDie: 8,
+  migDie: 8,
+  wlpDie: 8,
+  defense: 10,
+  magicDefense: 10,
+  attackName: 'Ataque básico',
+  attackAttributeA: 'dex',
+  attackAttributeB: 'mig',
+  attackBonus: 0,
+  damageBonus: 5,
+  damageType: 'physical',
+}
 
 function setRoomInUrl(roomCode: string) {
   const url = new URL(window.location.href)
@@ -503,6 +529,9 @@ export default function App() {
   const [savingHp, setSavingHp] = useState(false)
   const [joiningRoom, setJoiningRoom] = useState(false)
   const [assigningController, setAssigningController] = useState(false)
+  const [managingRoster, setManagingRoster] = useState(false)
+  const [newCombatant, setNewCombatant] =
+    useState<NewSceneCombatant>(defaultSceneCombatant)
   const [attacking, setAttacking] = useState(false)
   const [attackTargetId, setAttackTargetId] = useState('')
   const [actionMode, setActionMode] =
@@ -612,6 +641,31 @@ export default function App() {
             : combatant,
         ),
       )
+    })
+  }, [battleId, connectionStatus])
+
+
+  useEffect(() => {
+    if (!battleId || connectionStatus !== 'online') return
+
+    return subscribeToCombatantRoster(battleId, () => {
+      void loadBattleCombatants(battleId)
+        .then((roster) => {
+          setCombatants(roster)
+          setSelectedId((current) =>
+            current && roster.some((combatant) => combatant.id === current)
+              ? current
+              : roster[0]?.id ?? null,
+          )
+        })
+        .catch((error) => {
+          console.error(error)
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : 'Não foi possível sincronizar os participantes da cena.',
+          )
+        })
     })
   }, [battleId, connectionStatus])
 
@@ -1281,6 +1335,87 @@ export default function App() {
     }
   }
 
+  function updateNewCombatant<K extends keyof NewSceneCombatant>(
+    field: K,
+    value: NewSceneCombatant[K],
+  ) {
+    setNewCombatant((current) => ({
+      ...current,
+      [field]: value,
+    }))
+  }
+
+  async function handleCreateCombatant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (
+      !battleId ||
+      playerIdentity?.role !== 'host' ||
+      turnState.started ||
+      managingRoster
+    ) {
+      return
+    }
+
+    setManagingRoster(true)
+    setErrorMessage(null)
+
+    try {
+      const combatantId = await createSceneCombatant(battleId, newCombatant)
+      const roster = await loadBattleCombatants(battleId)
+      setCombatants(roster)
+      setSelectedId(combatantId)
+      setNewCombatant((current) => ({
+        ...defaultSceneCombatant,
+        side: current.side,
+      }))
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível adicionar o combatente.',
+      )
+    } finally {
+      setManagingRoster(false)
+    }
+  }
+
+  async function handleDeleteSelectedCombatant() {
+    if (
+      !selected ||
+      playerIdentity?.role !== 'host' ||
+      turnState.started ||
+      managingRoster
+    ) {
+      return
+    }
+
+    if (!window.confirm(`Remover ${selected.name} desta cena?`)) return
+
+    setManagingRoster(true)
+    setErrorMessage(null)
+
+    try {
+      await deleteSceneCombatant(selected.id)
+
+      if (battleId) {
+        const roster = await loadBattleCombatants(battleId)
+        setCombatants(roster)
+        setSelectedId(roster[0]?.id ?? null)
+      }
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível remover o combatente.',
+      )
+    } finally {
+      setManagingRoster(false)
+    }
+  }
+
   async function handleAssignController(userId: string | null) {
     if (
       !selected ||
@@ -1400,7 +1535,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Inventory autoritativo · v0.15</span>
+          <span className="eyebrow">Gerenciador de cena · v0.16</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -1474,8 +1609,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            A ação Inventory agora gasta IP no backend e aplica Remedy,
-            Elixir ou Tonic no mesmo fluxo autoritativo de turno.
+            O GM agora pode adicionar e remover combatentes da cena sem
+            editar o código. Alterações na formação são sincronizadas em tempo
+            real para todos na sala.
           </p>
 
           <div className="player-session">
@@ -1944,6 +2080,263 @@ export default function App() {
               </div>
             </form>
           </div>
+
+          {playerIdentity?.role === 'host' ? (
+            <details className="scene-manager">
+              <summary>Gerenciar participantes da cena</summary>
+
+              {turnState.started ? (
+                <p className="scene-manager__notice">
+                  Encerre o conflito para adicionar ou remover participantes.
+                </p>
+              ) : null}
+
+              <form
+                className="scene-manager__form"
+                onSubmit={(event) => void handleCreateCombatant(event)}
+              >
+                <div className="scene-manager__grid">
+                  <label className="scene-manager__wide">
+                    Nome
+                    <input
+                      value={newCombatant.name}
+                      onChange={(event) =>
+                        updateNewCombatant('name', event.target.value)
+                      }
+                      placeholder="Nome do combatente"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Lado
+                    <select
+                      value={newCombatant.side}
+                      onChange={(event) =>
+                        updateNewCombatant(
+                          'side',
+                          event.target.value as CombatSide,
+                        )
+                      }
+                    >
+                      <option value="heroes">Herói</option>
+                      <option value="enemies">Inimigo</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    HP
+                    <input
+                      type="number"
+                      min="1"
+                      value={newCombatant.maxHp}
+                      onChange={(event) =>
+                        updateNewCombatant('maxHp', Number(event.target.value))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    MP
+                    <input
+                      type="number"
+                      min="0"
+                      value={newCombatant.maxMp}
+                      onChange={(event) =>
+                        updateNewCombatant('maxMp', Number(event.target.value))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    IP
+                    <input
+                      type="number"
+                      min="0"
+                      value={newCombatant.maxIp}
+                      onChange={(event) =>
+                        updateNewCombatant('maxIp', Number(event.target.value))
+                      }
+                    />
+                  </label>
+
+                  {(['dexDie', 'insDie', 'migDie', 'wlpDie'] as const).map(
+                    (field) => (
+                      <label key={field}>
+                        {field.slice(0, 3).toUpperCase()}
+                        <select
+                          value={newCombatant[field]}
+                          onChange={(event) =>
+                            updateNewCombatant(
+                              field,
+                              Number(event.target.value) as 6 | 8 | 10 | 12,
+                            )
+                          }
+                        >
+                          <option value="6">d6</option>
+                          <option value="8">d8</option>
+                          <option value="10">d10</option>
+                          <option value="12">d12</option>
+                        </select>
+                      </label>
+                    ),
+                  )}
+
+                  <label>
+                    DEF
+                    <input
+                      type="number"
+                      min="0"
+                      value={newCombatant.defense}
+                      onChange={(event) =>
+                        updateNewCombatant(
+                          'defense',
+                          Number(event.target.value),
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    MDEF
+                    <input
+                      type="number"
+                      min="0"
+                      value={newCombatant.magicDefense}
+                      onChange={(event) =>
+                        updateNewCombatant(
+                          'magicDefense',
+                          Number(event.target.value),
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label className="scene-manager__wide">
+                    Ataque inicial
+                    <input
+                      value={newCombatant.attackName}
+                      onChange={(event) =>
+                        updateNewCombatant('attackName', event.target.value)
+                      }
+                      placeholder="Ataque básico"
+                    />
+                  </label>
+
+                  <label>
+                    Atributo A
+                    <select
+                      value={newCombatant.attackAttributeA}
+                      onChange={(event) =>
+                        updateNewCombatant(
+                          'attackAttributeA',
+                          event.target.value as AttributeName,
+                        )
+                      }
+                    >
+                      <option value="dex">DEX</option>
+                      <option value="ins">INS</option>
+                      <option value="mig">MIG</option>
+                      <option value="wlp">WLP</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Atributo B
+                    <select
+                      value={newCombatant.attackAttributeB}
+                      onChange={(event) =>
+                        updateNewCombatant(
+                          'attackAttributeB',
+                          event.target.value as AttributeName,
+                        )
+                      }
+                    >
+                      <option value="dex">DEX</option>
+                      <option value="ins">INS</option>
+                      <option value="mig">MIG</option>
+                      <option value="wlp">WLP</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Bônus teste
+                    <input
+                      type="number"
+                      value={newCombatant.attackBonus}
+                      onChange={(event) =>
+                        updateNewCombatant(
+                          'attackBonus',
+                          Number(event.target.value),
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Bônus dano
+                    <input
+                      type="number"
+                      value={newCombatant.damageBonus}
+                      onChange={(event) =>
+                        updateNewCombatant(
+                          'damageBonus',
+                          Number(event.target.value),
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Dano
+                    <select
+                      value={newCombatant.damageType}
+                      onChange={(event) =>
+                        updateNewCombatant(
+                          'damageType',
+                          event.target.value as DamageType,
+                        )
+                      }
+                    >
+                      <option value="physical">Físico</option>
+                      <option value="air">Ar</option>
+                      <option value="bolt">Raio</option>
+                      <option value="dark">Trevas</option>
+                      <option value="earth">Terra</option>
+                      <option value="fire">Fogo</option>
+                      <option value="ice">Gelo</option>
+                      <option value="light">Luz</option>
+                      <option value="poison">Veneno</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="scene-manager__actions">
+                  <button
+                    type="submit"
+                    disabled={
+                      turnState.started ||
+                      managingRoster ||
+                      !newCombatant.name.trim()
+                    }
+                  >
+                    {managingRoster ? 'Salvando…' : 'Adicionar à cena'}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="scene-manager__danger"
+                    onClick={() => void handleDeleteSelectedCombatant()}
+                    disabled={
+                      turnState.started || managingRoster || !selected
+                    }
+                  >
+                    Remover selecionado
+                  </button>
+                </div>
+              </form>
+            </details>
+          ) : null}
 
           {errorMessage ? (
             <p className="connection-error">{errorMessage}</p>

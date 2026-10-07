@@ -16,6 +16,26 @@ import type {
 } from '../types/combat'
 
 export type CombatAttackSeed = Omit<CombatAttack, 'id'>
+
+export type NewSceneCombatant = {
+  name: string
+  side: CombatSide
+  maxHp: number
+  maxMp: number
+  maxIp: number
+  dexDie: DieSize
+  insDie: DieSize
+  migDie: DieSize
+  wlpDie: DieSize
+  defense: number
+  magicDefense: number
+  attackName: string
+  attackAttributeA: AttributeName
+  attackAttributeB: AttributeName
+  attackBonus: number
+  damageBonus: number
+  damageType: DamageType
+}
 export type CombatAbilitySeed = Omit<CombatAbility, 'id'>
 export type CombatantSeed = Omit<
   Combatant,
@@ -483,7 +503,7 @@ function toCombatAction(row: CombatActionRow): CombatAction {
   }
 }
 
-async function loadCombatants(battleId: string) {
+export async function loadBattleCombatants(battleId: string) {
   const { data, error } = await supabase
     .from('combatants')
     .select(
@@ -702,11 +722,11 @@ async function hydrateBattle(
   battle: BattleRow,
   initialCombatants: CombatantSeed[],
 ): Promise<LoadedBattle> {
-  let combatants = await loadCombatants(battle.id)
+  let combatants = await loadBattleCombatants(battle.id)
 
   if (combatants.length === 0) {
     await seedCombatants(battle.id, initialCombatants)
-    combatants = await loadCombatants(battle.id)
+    combatants = await loadBattleCombatants(battle.id)
   }
 
   return {
@@ -723,11 +743,11 @@ async function loadBattleFromRpc(
   row: RoomBattleRpcRow,
   initialCombatants: CombatantSeed[],
 ): Promise<LoadedBattle> {
-  let combatants = await loadCombatants(row.battle_id)
+  let combatants = await loadBattleCombatants(row.battle_id)
 
   if (combatants.length === 0) {
     await seedCombatants(row.battle_id, initialCombatants)
-    combatants = await loadCombatants(row.battle_id)
+    combatants = await loadBattleCombatants(row.battle_id)
   }
 
   return {
@@ -840,6 +860,46 @@ export async function savePlayerDisplayName(
     role: row.role,
     displayName: row.display_name,
   }
+}
+
+export async function createSceneCombatant(
+  battleId: string,
+  input: NewSceneCombatant,
+) {
+  const { data, error } = await supabase.rpc('create_scene_combatant', {
+    p_battle_id: battleId,
+    p_name: input.name,
+    p_side: input.side,
+    p_max_hp: input.maxHp,
+    p_max_mp: input.maxMp,
+    p_max_ip: input.maxIp,
+    p_dex_die: input.dexDie,
+    p_ins_die: input.insDie,
+    p_mig_die: input.migDie,
+    p_wlp_die: input.wlpDie,
+    p_defense: input.defense,
+    p_magic_defense: input.magicDefense,
+    p_attack_name: input.attackName,
+    p_attack_attribute_a: input.attackAttributeA,
+    p_attack_attribute_b: input.attackAttributeB,
+    p_attack_bonus: input.attackBonus,
+    p_damage_bonus: input.damageBonus,
+    p_damage_type: input.damageType,
+  })
+
+  if (error) throw error
+
+  return data as string
+}
+
+export async function deleteSceneCombatant(combatantId: string) {
+  const { data, error } = await supabase.rpc('delete_scene_combatant', {
+    p_combatant_id: combatantId,
+  })
+
+  if (error) throw error
+
+  return data as string
 }
 
 export async function assignCombatantController(
@@ -1206,6 +1266,41 @@ export function subscribeToCombatantUpdates(
       },
       (payload) => {
         onUpdate(toCombatant(payload.new as CombatantRow))
+      },
+    )
+    .subscribe()
+
+  return () => {
+    void supabase.removeChannel(channel)
+  }
+}
+
+
+export function subscribeToCombatantRoster(
+  battleId: string,
+  onChange: () => void,
+) {
+  const channel = supabase
+    .channel(`battle-roster-${battleId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'combatants',
+        filter: `battle_id=eq.${battleId}`,
+      },
+      onChange,
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'combatants',
+      },
+      () => {
+        onChange()
       },
     )
     .subscribe()
