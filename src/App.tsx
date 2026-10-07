@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { CombatantCard } from './components/CombatantCard'
 import {
+  applyCombatantHpDelta,
   assignCombatantController,
   joinBattleRoom,
   loadCurrentPlayerIdentity,
   loadOrCreateBattle,
-  saveCombatantHp,
   savePlayerDisplayName,
   subscribeToCombatantUpdates,
 } from './lib/battleRepository'
@@ -220,23 +220,16 @@ export default function App() {
       return
     }
 
-    const nextHp = Math.max(
-      0,
-      Math.min(selected.maxHp, selected.hp + amount),
-    )
-
-    if (nextHp === selected.hp) return
-
     setSavingHp(true)
     setErrorMessage(null)
 
     try {
-      const savedHp = await saveCombatantHp(selected.id, nextHp)
+      const result = await applyCombatantHpDelta(selected.id, amount)
 
       setCombatants((current) =>
         current.map((combatant) =>
-          combatant.id === selected.id
-            ? { ...combatant, hp: savedHp }
+          combatant.id === result.combatantId
+            ? { ...combatant, hp: result.hp }
             : combatant,
         ),
       )
@@ -245,7 +238,7 @@ export default function App() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : 'Não foi possível salvar o HP no Supabase.',
+          : 'Não foi possível aplicar a alteração de HP.',
       )
     } finally {
       setSavingHp(false)
@@ -371,7 +364,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Controle de personagens · v0.5</span>
+          <span className="eyebrow">Ações autoritativas · v0.6</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -433,9 +426,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            A batalha continua sincronizada em tempo real. Agora cada membro
-            também possui uma identidade na sala e podemos ver quem está
-            conectado.
+            Alterações de HP agora são validadas e calculadas no backend.
+            O navegador solicita a ação, e o Supabase aplica o resultado
+            autorizado e sincroniza a batalha.
           </p>
 
           <div className="player-session">

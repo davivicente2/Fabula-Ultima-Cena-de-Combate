@@ -6,6 +6,7 @@ on:
       - feat/bootstrap
       - feat/supabase-persistence
       - feat/player-presence
+      - feat/authoritative-actions
       - main
   workflow_dispatch:
 
