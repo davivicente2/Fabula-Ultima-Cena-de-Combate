@@ -776,7 +776,6 @@ async function createBattleRoom(initialCombatants: CombatantSeed[]) {
 
 export async function joinBattleRoom(
   code: string,
-  initialCombatants: CombatantSeed[],
 ): Promise<LoadedBattle> {
   await ensureAnonymousSession()
 
@@ -802,7 +801,7 @@ export async function loadOrCreateBattle(
   await ensureAnonymousSession()
 
   if (requestedRoomCode) {
-    return joinBattleRoom(requestedRoomCode, initialCombatants)
+    return joinBattleRoom(requestedRoomCode)
   }
 
   const { data: existingBattle, error: battleLookupError } = await supabase
