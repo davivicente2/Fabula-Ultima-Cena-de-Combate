@@ -51,6 +51,21 @@ type CombatantHpActionRpcRow = {
   applied_delta: number
 }
 
+type CombatActionRow = {
+  id: string
+  battle_id: string
+  actor_user_id: string | null
+  actor_display_name: string | null
+  target_combatant_id: string | null
+  target_name: string | null
+  action_type: 'hp_adjustment'
+  requested_delta: number
+  applied_delta: number
+  previous_hp: number
+  resulting_hp: number
+  created_at: string
+}
+
 export type LoadedBattle = {
   id: string
   name: string
@@ -65,6 +80,21 @@ export type PlayerIdentity = {
   userId: string
   role: PlayerRole
   displayName: string | null
+}
+
+export type CombatAction = {
+  id: string
+  battleId: string
+  actorUserId: string | null
+  actorDisplayName: string | null
+  targetCombatantId: string | null
+  targetName: string | null
+  actionType: 'hp_adjustment'
+  requestedDelta: number
+  appliedDelta: number
+  previousHp: number
+  resultingHp: number
+  createdAt: string
 }
 
 async function ensureAnonymousSession() {
@@ -97,6 +127,23 @@ function toCombatant(row: CombatantRow): Combatant {
     maxIp: row.max_ip,
     isActive: row.is_active,
     controllerUserId: row.controller_user_id,
+  }
+}
+
+function toCombatAction(row: CombatActionRow): CombatAction {
+  return {
+    id: row.id,
+    battleId: row.battle_id,
+    actorUserId: row.actor_user_id,
+    actorDisplayName: row.actor_display_name,
+    targetCombatantId: row.target_combatant_id,
+    targetName: row.target_name,
+    actionType: row.action_type,
+    requestedDelta: row.requested_delta,
+    appliedDelta: row.applied_delta,
+    previousHp: row.previous_hp,
+    resultingHp: row.resulting_hp,
+    createdAt: row.created_at,
   }
 }
 
@@ -329,6 +376,49 @@ export async function applyCombatantHpDelta(
     hp: row.hp,
     maxHp: row.max_hp,
     appliedDelta: row.applied_delta,
+  }
+}
+
+export async function loadCombatActions(
+  battleId: string,
+  limit = 20,
+): Promise<CombatAction[]> {
+  const { data, error } = await supabase
+    .from('combat_actions')
+    .select(
+      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, created_at',
+    )
+    .eq('battle_id', battleId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+
+  return (data as CombatActionRow[]).map(toCombatAction)
+}
+
+export function subscribeToCombatActions(
+  battleId: string,
+  onInsert: (action: CombatAction) => void,
+) {
+  const channel = supabase
+    .channel(`combat-actions-${battleId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'combat_actions',
+        filter: `battle_id=eq.${battleId}`,
+      },
+      (payload) => {
+        onInsert(toCombatAction(payload.new as CombatActionRow))
+      },
+    )
+    .subscribe()
+
+  return () => {
+    void supabase.removeChannel(channel)
   }
 }
 

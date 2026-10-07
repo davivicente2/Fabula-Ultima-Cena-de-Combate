@@ -7,6 +7,7 @@ on:
       - feat/supabase-persistence
       - feat/player-presence
       - feat/authoritative-actions
+      - feat/combat-log
       - main
   workflow_dispatch:
 

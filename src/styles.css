@@ -623,3 +623,72 @@ h2 {
     width: 100%;
   }
 }
+
+
+.combat-log {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.combat-log__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+
+.combat-log__label {
+  color: #8f93a8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.combat-log__header small,
+.combat-log__entry small {
+  color: #777b8e;
+  font-size: 0.7rem;
+}
+
+.combat-log__entries {
+  display: grid;
+  gap: 6px;
+  max-height: 190px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.combat-log__entry {
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.combat-log__entry > span {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.combat-log__empty {
+  color: #7f8294;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .combat-log__header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .combat-log__entries {
+    max-height: 240px;
+  }
+}
