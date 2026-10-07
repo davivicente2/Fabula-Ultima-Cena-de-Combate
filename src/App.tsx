@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { CombatantCard } from './components/CombatantCard'
 import {
+  adjustCombatantResource,
   applyCombatantHpDelta,
   assignCombatantController,
   endCombatantTurn,
@@ -227,6 +228,17 @@ function combatActionText(action: CombatAction) {
   const actor = action.actorDisplayName ?? 'Jogador'
   const target = action.targetName ?? 'combatente'
 
+  if (action.actionType === 'resource_adjustment') {
+    const resource = action.resourceName?.toUpperCase() ?? 'Recurso'
+    const combatant = action.targetName ?? 'combatente'
+
+    if (action.appliedDelta < 0) {
+      return `${actor} gastou ${Math.abs(action.appliedDelta)} ${resource} de ${combatant}.`
+    }
+
+    return `${actor} recuperou ${action.appliedDelta} ${resource} de ${combatant}.`
+  }
+
   if (action.actionType === 'guard') {
     const combatant = action.attackerName ?? action.targetName ?? 'Combatente'
     return `${actor} · ${combatant} assumiu Guard e ganhou Resistência a todos os tipos de dano.`
@@ -320,6 +332,9 @@ export default function App() {
   const [changingTurnState, setChangingTurnState] = useState(false)
   const [endingTurn, setEndingTurn] = useState(false)
   const [guarding, setGuarding] = useState(false)
+  const [adjustingResource, setAdjustingResource] = useState<
+    'MP' | 'IP' | null
+  >(null)
   const [turnState, setTurnState] = useState<BattleTurnState>({
     started: false,
     roundNumber: 0,
@@ -670,6 +685,53 @@ export default function App() {
     }
   }
 
+  async function changeResource(
+    resource: 'MP' | 'IP',
+    amount: number,
+  ) {
+    if (
+      !selected ||
+      !canControlSelected ||
+      connectionStatus !== 'online' ||
+      adjustingResource
+    ) {
+      return
+    }
+
+    setAdjustingResource(resource)
+    setErrorMessage(null)
+
+    try {
+      const result = await adjustCombatantResource(
+        selected.id,
+        resource,
+        amount,
+      )
+
+      setCombatants((current) =>
+        current.map((combatant) =>
+          combatant.id === result.combatantId
+            ? {
+                ...combatant,
+                ...(result.resourceName === 'mp'
+                  ? { mp: result.value }
+                  : { ip: result.value }),
+              }
+            : combatant,
+        ),
+      )
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível alterar o recurso.',
+      )
+    } finally {
+      setAdjustingResource(null)
+    }
+  }
+
   async function changeHp(amount: number) {
     if (
       !selected ||
@@ -864,7 +926,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Guard autoritativo · v0.11</span>
+          <span className="eyebrow">Recursos autoritativos · v0.12</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -938,9 +1000,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            Guard agora é uma ação autoritativa. Ela consome o turno e concede
-            Resistência a todos os tipos de dano até o começo da próxima ação
-            desse combatente.
+            MP e IP agora também são controlados pelo backend. Jogadores
+            atribuídos podem gastar seus próprios recursos; recuperação manual
+            é restrita ao GM e serve apenas para teste por enquanto.
           </p>
 
           <div className="player-session">
@@ -1181,7 +1243,17 @@ export default function App() {
                           {action.guardApplied ? ' · Guard' : ''}
                         </>
                       ) : null}
-                      {' '}· HP {action.previousHp} → {action.resultingHp}
+                      {action.actionType === 'resource_adjustment' &&
+                      action.resourceName &&
+                      action.previousResource !== null &&
+                      action.resultingResource !== null ? (
+                        <>
+                          {' '}· {action.resourceName.toUpperCase()}{' '}
+                          {action.previousResource} → {action.resultingResource}
+                        </>
+                      ) : (
+                        <> {' '}· HP {action.previousHp} → {action.resultingHp}</>
+                      )}
                     </small>
                   </div>
                 ))
@@ -1262,6 +1334,54 @@ export default function App() {
             }
           >
             Cura +5
+          </button>
+          <button
+            type="button"
+            onClick={() => void changeResource('MP', -5)}
+            disabled={
+              !selected ||
+              !canControlSelected ||
+              connectionStatus !== 'online' ||
+              adjustingResource !== null
+            }
+          >
+            MP −5
+          </button>
+          <button
+            type="button"
+            onClick={() => void changeResource('MP', 5)}
+            disabled={
+              !selected ||
+              playerIdentity?.role !== 'host' ||
+              connectionStatus !== 'online' ||
+              adjustingResource !== null
+            }
+          >
+            MP +5
+          </button>
+          <button
+            type="button"
+            onClick={() => void changeResource('IP', -1)}
+            disabled={
+              !selected ||
+              !canControlSelected ||
+              connectionStatus !== 'online' ||
+              adjustingResource !== null
+            }
+          >
+            IP −1
+          </button>
+          <button
+            type="button"
+            onClick={() => void changeResource('IP', 1)}
+            disabled={
+              !selected ||
+              playerIdentity?.role !== 'host' ||
+              connectionStatus !== 'online' ||
+              adjustingResource !== null
+            }
+          >
+            IP +1
           </button>
           <button
             type="button"
