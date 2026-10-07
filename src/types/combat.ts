@@ -3,6 +3,23 @@ export type CombatSide = 'heroes' | 'enemies'
 export type AttributeName = 'dex' | 'ins' | 'mig' | 'wlp'
 export type DieSize = 6 | 8 | 10 | 12
 
+export type DamageType =
+  | 'physical'
+  | 'air'
+  | 'bolt'
+  | 'dark'
+  | 'earth'
+  | 'fire'
+  | 'ice'
+  | 'light'
+  | 'poison'
+
+export type DamageAffinity =
+  | 'vulnerable'
+  | 'resistant'
+  | 'immune'
+  | 'absorbs'
+
 export type CombatAttack = {
   id: string
   name: string
@@ -10,7 +27,7 @@ export type CombatAttack = {
   accuracyAttributeB: AttributeName
   accuracyBonus: number
   damageBonus: number
-  damageType: string
+  damageType: DamageType
 }
 
 export type Combatant = {
@@ -30,6 +47,7 @@ export type Combatant = {
   defense: number
   magicDefense: number
   attacks: CombatAttack[]
+  affinities: Partial<Record<DamageType, DamageAffinity>>
   isActive?: boolean
   controllerUserId?: string | null
 }

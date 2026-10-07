@@ -23,7 +23,12 @@ import {
   subscribeToRoomPresence,
 } from './lib/presence'
 import type { OnlinePlayer } from './lib/presence'
-import type { AttributeName, Combatant } from './types/combat'
+import type {
+  AttributeName,
+  Combatant,
+  DamageAffinity,
+  DamageType,
+} from './types/combat'
 
 const initialCombatants: CombatantSeed[] = [
   {
@@ -51,6 +56,10 @@ const initialCombatants: CombatantSeed[] = [
         damageType: 'physical',
       },
     ],
+    affinities: {
+      physical: 'resistant',
+      poison: 'immune',
+    },
     isActive: true,
   },
   {
@@ -75,9 +84,13 @@ const initialCombatants: CombatantSeed[] = [
         accuracyAttributeB: 'ins',
         accuracyBonus: 1,
         damageBonus: 8,
-        damageType: 'physical',
+        damageType: 'bolt',
       },
     ],
+    affinities: {
+      physical: 'vulnerable',
+      poison: 'absorbs',
+    },
   },
   {
     name: 'Lobo de Cinzas',
@@ -101,9 +114,12 @@ const initialCombatants: CombatantSeed[] = [
         accuracyAttributeB: 'mig',
         accuracyBonus: 0,
         damageBonus: 6,
-        damageType: 'physical',
+        damageType: 'poison',
       },
     ],
+    affinities: {
+      physical: 'vulnerable',
+    },
   },
   {
     name: 'Cavaleiro Rubro',
@@ -130,6 +146,10 @@ const initialCombatants: CombatantSeed[] = [
         damageType: 'physical',
       },
     ],
+    affinities: {
+      physical: 'resistant',
+      bolt: 'vulnerable',
+    },
   },
 ]
 
@@ -145,6 +165,39 @@ function setRoomInUrl(roomCode: string) {
 
 function roleLabel(role: PlayerIdentity['role']) {
   return role === 'host' ? 'GM' : 'Jogador'
+}
+
+function damageTypeLabel(damageType: DamageType | null) {
+  const labels: Record<DamageType, string> = {
+    physical: 'Físico',
+    air: 'Ar',
+    bolt: 'Raio',
+    dark: 'Trevas',
+    earth: 'Terra',
+    fire: 'Fogo',
+    ice: 'Gelo',
+    light: 'Luz',
+    poison: 'Veneno',
+  }
+
+  return damageType ? labels[damageType] : '—'
+}
+
+function affinityLabel(
+  affinity: DamageAffinity | 'neutral' | null | undefined,
+) {
+  switch (affinity) {
+    case 'vulnerable':
+      return 'Vulnerabilidade'
+    case 'resistant':
+      return 'Resistência'
+    case 'immune':
+      return 'Imunidade'
+    case 'absorbs':
+      return 'Absorção'
+    default:
+      return 'Neutro'
+  }
 }
 
 function combatActionText(action: CombatAction) {
@@ -164,7 +217,25 @@ function combatActionText(action: CombatAction) {
     }
 
     const critical = action.isCritical ? ' Crítico!' : ''
-    return `${actor} · ${attacker} usou ${attack} em ${target}: ${action.damage ?? 0} de dano.${critical}`
+    const rawDamage = action.damage ?? 0
+
+    if (action.damageAffinity === 'immune') {
+      return `${actor} · ${attacker} usou ${attack} em ${target}: acertou, mas o alvo é imune a ${damageTypeLabel(action.damageType)}.${critical}`
+    }
+
+    if (action.damageAffinity === 'absorbs') {
+      return `${actor} · ${attacker} usou ${attack} em ${target}: ${rawDamage} de ${damageTypeLabel(action.damageType)}, absorvido pelo alvo (+${Math.max(0, action.appliedDelta)} HP).${critical}`
+    }
+
+    const hpLost = Math.max(0, -action.appliedDelta)
+    const affinity =
+      action.damageAffinity === 'vulnerable'
+        ? ' Vulnerabilidade!'
+        : action.damageAffinity === 'resistant'
+          ? ' Resistência.'
+          : ''
+
+    return `${actor} · ${attacker} usou ${attack} em ${target}: ${rawDamage} de ${damageTypeLabel(action.damageType)} → ${hpLost} HP perdidos.${affinity}${critical}`
   }
 
   if (action.appliedDelta < 0) {
@@ -281,7 +352,11 @@ export default function App() {
       setCombatants((current) =>
         current.map((combatant) =>
           combatant.id === updatedCombatant.id
-            ? { ...updatedCombatant, attacks: combatant.attacks }
+            ? {
+                ...updatedCombatant,
+                attacks: combatant.attacks,
+                affinities: combatant.affinities,
+              }
             : combatant,
         ),
       )
@@ -586,7 +661,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Ataques autoritativos · v0.8</span>
+          <span className="eyebrow">Afinidades de dano · v0.9</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -648,9 +723,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            Ataques agora são rolados e resolvidos no backend. O Supabase
-            valida quem controla o atacante, rola os dados, compara com a
-            Defesa do alvo, aplica o dano e registra tudo no combate.
+            O backend agora também resolve Afinidades de dano. Vulnerabilidade,
+            Resistência, Imunidade e Absorção são aplicadas pelo Supabase antes
+            de atualizar o HP e registrar o resultado.
           </p>
 
           <div className="player-session">
@@ -767,7 +842,8 @@ export default function App() {
                       )}{' '}
                       {selectedAttack.accuracyBonus >= 0 ? '+' : ''}
                       {selectedAttack.accuracyBonus} · HR +
-                      {selectedAttack.damageBonus}
+                      {selectedAttack.damageBonus} ·{' '}
+                      {damageTypeLabel(selectedAttack.damageType)}
                     </small>
                   </>
                 ) : (
@@ -785,6 +861,11 @@ export default function App() {
                   {attackTargets.map((target) => (
                     <option key={target.id} value={target.id}>
                       {target.name} · DEF {target.defense}
+                      {selectedAttack
+                        ? ` · ${affinityLabel(
+                            target.affinities[selectedAttack.damageType],
+                          )}`
+                        : ''}
                     </option>
                   ))}
                 </select>
@@ -813,6 +894,9 @@ export default function App() {
                             : ''}
                           {action.targetDefense !== null
                             ? ` vs DEF ${action.targetDefense}`
+                            : ''}
+                          {action.damageType
+                            ? ` · ${damageTypeLabel(action.damageType)} / ${affinityLabel(action.damageAffinity)}`
                             : ''}
                         </>
                       ) : null}
