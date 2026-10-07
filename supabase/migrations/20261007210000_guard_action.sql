@@ -330,7 +330,7 @@ returns table (
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_room_id uuid;
   v_current_side text;
@@ -396,7 +396,7 @@ begin
   return query
   select p_battle_id, true, 1, p_first_side, v_current_side;
 end;
-$;
+$$;
 
 revoke all on function public.start_battle_turns(uuid, text)
   from public, anon;
