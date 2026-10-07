@@ -5,12 +5,15 @@ import {
   applyCombatantHpDelta,
   assignCombatantController,
   joinBattleRoom,
+  loadCombatActions,
   loadCurrentPlayerIdentity,
   loadOrCreateBattle,
   savePlayerDisplayName,
+  subscribeToCombatActions,
   subscribeToCombatantUpdates,
 } from './lib/battleRepository'
 import type {
+  CombatAction,
   LoadedBattle,
   PlayerIdentity,
 } from './lib/battleRepository'
@@ -78,6 +81,24 @@ function roleLabel(role: PlayerIdentity['role']) {
   return role === 'host' ? 'GM' : 'Jogador'
 }
 
+function combatActionText(action: CombatAction) {
+  const actor = action.actorDisplayName ?? 'Jogador'
+  const target = action.targetName ?? 'combatente'
+
+  if (action.appliedDelta < 0) {
+    return `${actor} causou ${Math.abs(action.appliedDelta)} de dano em ${target}.`
+  }
+
+  return `${actor} curou ${target} em ${action.appliedDelta} HP.`
+}
+
+function combatActionTime(createdAt: string) {
+  return new Date(createdAt).toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export default function App() {
   const initializationStarted = useRef(false)
 
@@ -102,6 +123,7 @@ export default function App() {
   )
   const [savingPlayerName, setSavingPlayerName] = useState(false)
   const [onlinePlayers, setOnlinePlayers] = useState<OnlinePlayer[]>([])
+  const [combatActions, setCombatActions] = useState<CombatAction[]>([])
 
   async function applyBattle(battle: LoadedBattle) {
     setCombatants(battle.combatants)
@@ -111,6 +133,7 @@ export default function App() {
     setBattleName(battle.name)
     setRoomCode(battle.roomCode)
     setJoinCode('')
+    setCombatActions([])
     setRoomInUrl(battle.roomCode)
 
     let identity = await loadCurrentPlayerIdentity(battle.roomId)
@@ -166,6 +189,42 @@ export default function App() {
         ),
       )
     })
+  }, [battleId, connectionStatus])
+
+  useEffect(() => {
+    if (!battleId || connectionStatus !== 'online') {
+      setCombatActions([])
+      return
+    }
+
+    let cancelled = false
+
+    void loadCombatActions(battleId)
+      .then((actions) => {
+        if (!cancelled) setCombatActions(actions)
+      })
+      .catch((error) => {
+        console.error(error)
+        if (!cancelled) {
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : 'Não foi possível carregar o log de combate.',
+          )
+        }
+      })
+
+    const unsubscribe = subscribeToCombatActions(battleId, (action) => {
+      setCombatActions((current) => {
+        if (current.some((entry) => entry.id === action.id)) return current
+        return [action, ...current].slice(0, 20)
+      })
+    })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [battleId, connectionStatus])
 
   useEffect(() => {
@@ -364,7 +423,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Ações autoritativas · v0.6</span>
+          <span className="eyebrow">Log de combate · v0.7</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -524,6 +583,31 @@ export default function App() {
               )}
             </div>
           ) : null}
+
+          <div className="combat-log">
+            <div className="combat-log__header">
+              <span className="combat-log__label">Registro de combate</span>
+              <small>Últimas {combatActions.length || 0} ações</small>
+            </div>
+
+            <div className="combat-log__entries">
+              {combatActions.length > 0 ? (
+                combatActions.map((action) => (
+                  <div className="combat-log__entry" key={action.id}>
+                    <span>{combatActionText(action)}</span>
+                    <small>
+                      {combatActionTime(action.createdAt)} · HP{' '}
+                      {action.previousHp} → {action.resultingHp}
+                    </small>
+                  </div>
+                ))
+              ) : (
+                <span className="combat-log__empty">
+                  Nenhuma ação registrada nesta batalha ainda.
+                </span>
+              )}
+            </div>
+          </div>
 
           <div className="room-controls">
             <div>
