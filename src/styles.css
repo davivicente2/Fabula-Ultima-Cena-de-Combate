@@ -762,3 +762,67 @@ h2 {
     min-width: 0;
   }
 }
+
+
+.turn-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.turn-panel > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.turn-panel__label {
+  color: #8f93a8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.turn-panel__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.turn-panel button {
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  color: #f7f5f0;
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+
+.turn-panel button:disabled {
+  color: #6f7280;
+  cursor: not-allowed;
+}
+
+.battlefield__turn small {
+  margin-top: 2px;
+  color: #8f93a8;
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .turn-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .turn-panel__controls button {
+    flex: 1;
+  }
+}

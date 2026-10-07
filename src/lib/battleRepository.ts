@@ -34,6 +34,7 @@ type CombatantRow = {
   wlp_die: DieSize
   defense: number
   magic_defense: number
+  last_acted_round: number
 }
 
 type CombatAttackRow = {
@@ -65,6 +66,26 @@ type BattleRow = {
   id: string
   name: string
   room_id: string
+  conflict_started: boolean
+  round_number: number
+  initiative_side: CombatSide | null
+  current_side: CombatSide | null
+}
+
+type BattleTurnRpcRow = {
+  battle_id: string
+  conflict_started: boolean
+  round_number: number
+  initiative_side: CombatSide | null
+  current_side: CombatSide | null
+}
+
+type EndTurnRpcRow = {
+  battle_id: string
+  combatant_id: string
+  acted_round: number
+  next_round: number
+  next_side: CombatSide | null
 }
 
 type PlayerIdentityRpcRow = {
@@ -94,7 +115,7 @@ type CombatActionRow = {
   actor_display_name: string | null
   target_combatant_id: string | null
   target_name: string | null
-  action_type: 'hp_adjustment' | 'attack'
+  action_type: 'hp_adjustment' | 'attack' | 'turn_end'
   requested_delta: number
   applied_delta: number
   previous_hp: number
@@ -113,6 +134,7 @@ type CombatActionRow = {
   damage: number | null
   damage_type: DamageType | null
   damage_affinity: DamageAffinity | 'neutral' | null
+  round_number: number | null
   created_at: string
 }
 
@@ -136,12 +158,20 @@ type CombatAttackRpcRow = {
   resulting_hp: number
 }
 
+export type BattleTurnState = {
+  started: boolean
+  roundNumber: number
+  initiativeSide: CombatSide | null
+  currentSide: CombatSide | null
+}
+
 export type LoadedBattle = {
   id: string
   name: string
   roomId: string
   roomCode: string
   combatants: Combatant[]
+  turnState: BattleTurnState
 }
 
 export type PlayerRole = 'host' | 'player'
@@ -159,7 +189,7 @@ export type CombatAction = {
   actorDisplayName: string | null
   targetCombatantId: string | null
   targetName: string | null
-  actionType: 'hp_adjustment' | 'attack'
+  actionType: 'hp_adjustment' | 'attack' | 'turn_end'
   requestedDelta: number
   appliedDelta: number
   previousHp: number
@@ -178,6 +208,7 @@ export type CombatAction = {
   damage: number | null
   damageType: DamageType | null
   damageAffinity: DamageAffinity | 'neutral' | null
+  roundNumber: number | null
   createdAt: string
 }
 
@@ -221,6 +252,7 @@ function toCombatant(
     magicDefense: row.magic_defense,
     attacks,
     affinities,
+    lastActedRound: row.last_acted_round,
     isActive: row.is_active,
     controllerUserId: row.controller_user_id,
   }
@@ -265,6 +297,7 @@ function toCombatAction(row: CombatActionRow): CombatAction {
     damage: row.damage,
     damageType: row.damage_type,
     damageAffinity: row.damage_affinity,
+    roundNumber: row.round_number,
     createdAt: row.created_at,
   }
 }
@@ -273,7 +306,7 @@ async function loadCombatants(battleId: string) {
   const { data, error } = await supabase
     .from('combatants')
     .select(
-      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, defense, magic_defense',
+      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, defense, magic_defense, last_acted_round',
     )
     .eq('battle_id', battleId)
     .order('sort_order', { ascending: true })
@@ -407,6 +440,36 @@ async function getRoomCode(roomId: string) {
   return data.code as string
 }
 
+function toBattleTurnState(row: {
+  conflict_started: boolean
+  round_number: number
+  initiative_side: CombatSide | null
+  current_side: CombatSide | null
+}): BattleTurnState {
+  return {
+    started: row.conflict_started,
+    roundNumber: row.round_number,
+    initiativeSide: row.initiative_side,
+    currentSide: row.current_side,
+  }
+}
+
+async function loadBattleTurnState(
+  battleId: string,
+): Promise<BattleTurnState> {
+  const { data, error } = await supabase
+    .from('battles')
+    .select(
+      'conflict_started, round_number, initiative_side, current_side',
+    )
+    .eq('id', battleId)
+    .single()
+
+  if (error) throw error
+
+  return toBattleTurnState(data as BattleRow)
+}
+
 async function hydrateBattle(
   battle: BattleRow,
   initialCombatants: CombatantSeed[],
@@ -424,6 +487,7 @@ async function hydrateBattle(
     roomId: battle.room_id,
     roomCode: await getRoomCode(battle.room_id),
     combatants,
+    turnState: toBattleTurnState(battle),
   }
 }
 
@@ -444,6 +508,7 @@ async function loadBattleFromRpc(
     roomId: row.room_id,
     roomCode: row.room_code,
     combatants,
+    turnState: await loadBattleTurnState(row.battle_id),
   }
 }
 
@@ -490,7 +555,9 @@ export async function loadOrCreateBattle(
 
   const { data: existingBattle, error: battleLookupError } = await supabase
     .from('battles')
-    .select('id, name, room_id')
+    .select(
+      'id, name, room_id, conflict_started, round_number, initiative_side, current_side',
+    )
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle()
@@ -600,7 +667,7 @@ export async function loadCombatActions(
   const { data, error } = await supabase
     .from('combat_actions')
     .select(
-      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, created_at',
+      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, created_at',
     )
     .eq('battle_id', battleId)
     .order('created_at', { ascending: false })
@@ -609,6 +676,56 @@ export async function loadCombatActions(
   if (error) throw error
 
   return (data as CombatActionRow[]).map(toCombatAction)
+}
+
+export async function startBattleTurns(
+  battleId: string,
+  firstSide: CombatSide,
+): Promise<BattleTurnState> {
+  const { data, error } = await supabase
+    .rpc('start_battle_turns', {
+      p_battle_id: battleId,
+      p_first_side: firstSide,
+    })
+    .single()
+
+  if (error) throw error
+
+  return toBattleTurnState(data as BattleTurnRpcRow)
+}
+
+export async function stopBattleTurns(
+  battleId: string,
+): Promise<BattleTurnState> {
+  const { data, error } = await supabase
+    .rpc('stop_battle_turns', {
+      p_battle_id: battleId,
+    })
+    .single()
+
+  if (error) throw error
+
+  return toBattleTurnState(data as BattleTurnRpcRow)
+}
+
+export async function endCombatantTurn(combatantId: string) {
+  const { data, error } = await supabase
+    .rpc('end_combatant_turn', {
+      p_combatant_id: combatantId,
+    })
+    .single()
+
+  if (error) throw error
+
+  const row = data as EndTurnRpcRow
+
+  return {
+    battleId: row.battle_id,
+    combatantId: row.combatant_id,
+    actedRound: row.acted_round,
+    nextRound: row.next_round,
+    nextSide: row.next_side,
+  }
 }
 
 export async function performCombatantAttack(
@@ -663,6 +780,31 @@ export function subscribeToCombatActions(
       },
       (payload) => {
         onInsert(toCombatAction(payload.new as CombatActionRow))
+      },
+    )
+    .subscribe()
+
+  return () => {
+    void supabase.removeChannel(channel)
+  }
+}
+
+export function subscribeToBattleTurnState(
+  battleId: string,
+  onUpdate: (state: BattleTurnState) => void,
+) {
+  const channel = supabase
+    .channel(`battle-turns-${battleId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'battles',
+        filter: `id=eq.${battleId}`,
+      },
+      (payload) => {
+        onUpdate(toBattleTurnState(payload.new as BattleRow))
       },
     )
     .subscribe()

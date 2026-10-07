@@ -48,6 +48,7 @@ export type Combatant = {
   magicDefense: number
   attacks: CombatAttack[]
   affinities: Partial<Record<DamageType, DamageAffinity>>
+  lastActedRound?: number
   isActive?: boolean
   controllerUserId?: string | null
 }
