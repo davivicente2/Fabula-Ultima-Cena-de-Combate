@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { CombatantCard } from './components/CombatantCard'
 import {
+  adjustCombatantResource,
   applyCombatantHpDelta,
   assignCombatantController,
   endCombatantTurn,
@@ -227,6 +228,17 @@ function combatActionText(action: CombatAction) {
   const actor = action.actorDisplayName ?? 'Jogador'
   const target = action.targetName ?? 'combatente'
 
+  if (action.actionType === 'resource_adjustment') {
+    const resource = action.resourceName?.toUpperCase() ?? 'Recurso'
+    const combatant = action.targetName ?? 'combatente'
+
+    if (action.appliedDelta < 0) {
+      return `${actor} gastou ${Math.abs(action.appliedDelta)} ${resource} de ${combatant}.`
+    }
+
+    return `${actor} recuperou ${action.appliedDelta} ${resource} de ${combatant}.`
+  }
+
   if (action.actionType === 'guard') {
     const combatant = action.attackerName ?? action.targetName ?? 'Combatente'
     return `${actor} · ${combatant} assumiu Guard e ganhou Resistência a todos os tipos de dano.`
@@ -320,11 +332,15 @@ export default function App() {
   const [changingTurnState, setChangingTurnState] = useState(false)
   const [endingTurn, setEndingTurn] = useState(false)
   const [guarding, setGuarding] = useState(false)
+  const [adjustingResource, setAdjustingResource] = useState<
+    'MP' | 'IP' | null
+  >(null)
   const [turnState, setTurnState] = useState<BattleTurnState>({
     started: false,
     roundNumber: 0,
     initiativeSide: null,
     currentSide: null,
+    turnRevision: 0,
   })
 
   const [playerIdentity, setPlayerIdentity] =
@@ -519,6 +535,7 @@ export default function App() {
           (combatant.lastActedRound ?? 0) < turnState.roundNumber,
       )
     : []
+  const combatActionBusy = attacking || guarding || endingTurn
 
   useEffect(() => {
     if (!selected) {
@@ -597,13 +614,16 @@ export default function App() {
   }
 
   async function handleEndTurn() {
-    if (!selected || !canActSelected || endingTurn) return
+    if (!selected || !canActSelected || combatActionBusy) return
 
     setEndingTurn(true)
     setErrorMessage(null)
 
     try {
-      const result = await endCombatantTurn(selected.id)
+      const result = await endCombatantTurn(
+        selected.id,
+        turnState.turnRevision,
+      )
 
       setCombatants((current) =>
         current.map((combatant) =>
@@ -618,6 +638,7 @@ export default function App() {
         started: result.nextSide !== null,
         roundNumber: result.nextRound,
         currentSide: result.nextSide,
+        turnRevision: result.nextRevision,
       }))
     } catch (error) {
       console.error(error)
@@ -632,13 +653,16 @@ export default function App() {
   }
 
   async function handleGuard() {
-    if (!selected || !canActSelected || guarding) return
+    if (!selected || !canActSelected || combatActionBusy) return
 
     setGuarding(true)
     setErrorMessage(null)
 
     try {
-      const result = await performGuard(selected.id)
+      const result = await performGuard(
+        selected.id,
+        turnState.turnRevision,
+      )
 
       setCombatants((current) =>
         current.map((combatant) =>
@@ -657,6 +681,7 @@ export default function App() {
         started: result.nextSide !== null,
         roundNumber: result.nextRound,
         currentSide: result.nextSide,
+        turnRevision: result.nextRevision,
       }))
     } catch (error) {
       console.error(error)
@@ -667,6 +692,53 @@ export default function App() {
       )
     } finally {
       setGuarding(false)
+    }
+  }
+
+  async function changeResource(
+    resource: 'MP' | 'IP',
+    amount: number,
+  ) {
+    if (
+      !selected ||
+      !canControlSelected ||
+      connectionStatus !== 'online' ||
+      adjustingResource
+    ) {
+      return
+    }
+
+    setAdjustingResource(resource)
+    setErrorMessage(null)
+
+    try {
+      const result = await adjustCombatantResource(
+        selected.id,
+        resource,
+        amount,
+      )
+
+      setCombatants((current) =>
+        current.map((combatant) =>
+          combatant.id === result.combatantId
+            ? {
+                ...combatant,
+                ...(result.resourceName === 'mp'
+                  ? { mp: result.value }
+                  : { ip: result.value }),
+              }
+            : combatant,
+        ),
+      )
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível alterar o recurso.',
+      )
+    } finally {
+      setAdjustingResource(null)
     }
   }
 
@@ -712,7 +784,7 @@ export default function App() {
       !attackTarget ||
       !canActSelected ||
       connectionStatus !== 'online' ||
-      attacking
+      combatActionBusy
     ) {
       return
     }
@@ -724,15 +796,39 @@ export default function App() {
       const result = await performCombatantAttack(
         selectedAttack.id,
         attackTarget.id,
+        turnState.turnRevision,
       )
 
       setCombatants((current) =>
-        current.map((combatant) =>
-          combatant.id === result.targetId
-            ? { ...combatant, hp: result.resultingHp }
-            : combatant,
-        ),
+        current.map((combatant) => {
+          if (combatant.id === result.attackerId) {
+            return {
+              ...combatant,
+              lastActedRound: result.actedRound,
+              guardStartedRound:
+                combatant.guardStartedRound !== null &&
+                combatant.guardStartedRound !== undefined &&
+                combatant.guardStartedRound < result.actedRound
+                  ? null
+                  : combatant.guardStartedRound,
+            }
+          }
+
+          if (combatant.id === result.targetId) {
+            return { ...combatant, hp: result.resultingHp }
+          }
+
+          return combatant
+        }),
       )
+
+      setTurnState((current) => ({
+        ...current,
+        started: result.nextSide !== null,
+        roundNumber: result.nextRound,
+        currentSide: result.nextSide,
+        turnRevision: result.nextRevision,
+      }))
     } catch (error) {
       console.error(error)
       setErrorMessage(
@@ -864,7 +960,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Guard autoritativo · v0.11</span>
+          <span className="eyebrow">Recursos autoritativos · v0.12</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -938,9 +1034,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            Guard agora é uma ação autoritativa. Ela consome o turno e concede
-            Resistência a todos os tipos de dano até o começo da próxima ação
-            desse combatente.
+            MP e IP agora também são controlados pelo backend. Jogadores
+            atribuídos podem gastar seus próprios recursos; recuperação manual
+            é restrita ao GM e serve apenas para teste por enquanto.
           </p>
 
           <div className="player-session">
@@ -1126,7 +1222,7 @@ export default function App() {
                 <select
                   value={attackTargetId}
                   onChange={(event) => setAttackTargetId(event.target.value)}
-                  disabled={!canActSelected || attacking}
+                  disabled={!canActSelected || combatActionBusy}
                 >
                   {attackTargets.map((target) => (
                     <option key={target.id} value={target.id}>
@@ -1181,7 +1277,17 @@ export default function App() {
                           {action.guardApplied ? ' · Guard' : ''}
                         </>
                       ) : null}
-                      {' '}· HP {action.previousHp} → {action.resultingHp}
+                      {action.actionType === 'resource_adjustment' &&
+                      action.resourceName &&
+                      action.previousResource !== null &&
+                      action.resultingResource !== null ? (
+                        <>
+                          {' '}· {action.resourceName.toUpperCase()}{' '}
+                          {action.previousResource} → {action.resultingResource}
+                        </>
+                      ) : (
+                        <> {' '}· HP {action.previousHp} → {action.resultingHp}</>
+                      )}
                     </small>
                   </div>
                 ))
@@ -1238,63 +1344,130 @@ export default function App() {
           ) : null}
         </div>
 
-        <div className="command-panel__buttons">
-          <button
-            type="button"
-            onClick={() => void changeHp(-5)}
-            disabled={
-              !selected ||
-              !canControlSelected ||
-              connectionStatus !== 'online' ||
-              savingHp
-            }
-          >
-            Dano −5
-          </button>
-          <button
-            type="button"
-            onClick={() => void changeHp(5)}
-            disabled={
-              !selected ||
-              !canControlSelected ||
-              connectionStatus !== 'online' ||
-              savingHp
-            }
-          >
-            Cura +5
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleAttack()}
-            disabled={
-              !selected ||
-              !selectedAttack ||
-              !attackTarget ||
-              !canActSelected ||
-              connectionStatus !== 'online' ||
-              attacking
-            }
-          >
-            {attacking ? 'Atacando…' : 'Atacar'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleGuard()}
-            disabled={!canActSelected || guarding}
-          >
-            {guarding ? 'Defendendo…' : 'Guard'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleEndTurn()}
-            disabled={!canActSelected || endingTurn}
-          >
-            {endingTurn ? 'Encerrando…' : 'Encerrar turno'}
-          </button>
-          <button type="button" disabled>
-            Habilidade
-          </button>
-        </div>
+        <aside className="command-panel__actions">
+          <div className="command-actions__group">
+            <span className="command-actions__label">Ações de combate</span>
+
+            <button
+              type="button"
+              onClick={() => void handleAttack()}
+              disabled={
+                !selected ||
+                !selectedAttack ||
+                !attackTarget ||
+                !canActSelected ||
+                connectionStatus !== 'online' ||
+                combatActionBusy
+              }
+            >
+              {attacking ? 'Atacando…' : 'Atacar'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleGuard()}
+              disabled={!canActSelected || combatActionBusy}
+            >
+              {guarding ? 'Defendendo…' : 'Guard'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleEndTurn()}
+              disabled={!canActSelected || combatActionBusy}
+            >
+              {endingTurn ? 'Encerrando…' : 'Encerrar turno'}
+            </button>
+
+            <button type="button" disabled>
+              Habilidade
+            </button>
+          </div>
+
+          <div className="command-actions__group command-actions__group--debug">
+            <span className="command-actions__label">Debug / GM</span>
+
+            <div className="command-actions__grid">
+              <button
+                type="button"
+                onClick={() => void changeHp(-5)}
+                disabled={
+                  !selected ||
+                  !canControlSelected ||
+                  connectionStatus !== 'online' ||
+                  savingHp
+                }
+              >
+                HP −5
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void changeHp(5)}
+                disabled={
+                  !selected ||
+                  !canControlSelected ||
+                  connectionStatus !== 'online' ||
+                  savingHp
+                }
+              >
+                HP +5
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void changeResource('MP', -5)}
+                disabled={
+                  !selected ||
+                  !canControlSelected ||
+                  connectionStatus !== 'online' ||
+                  adjustingResource !== null
+                }
+              >
+                MP −5
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void changeResource('MP', 5)}
+                disabled={
+                  !selected ||
+                  playerIdentity?.role !== 'host' ||
+                  connectionStatus !== 'online' ||
+                  adjustingResource !== null
+                }
+              >
+                MP +5
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void changeResource('IP', -1)}
+                disabled={
+                  !selected ||
+                  !canControlSelected ||
+                  connectionStatus !== 'online' ||
+                  adjustingResource !== null
+                }
+              >
+                IP −1
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void changeResource('IP', 1)}
+                disabled={
+                  !selected ||
+                  playerIdentity?.role !== 'host' ||
+                  connectionStatus !== 'online' ||
+                  adjustingResource !== null
+                }
+              >
+                IP +1
+              </button>
+            </div>
+          </div>
+        </aside>
       </section>
     </main>
   )
