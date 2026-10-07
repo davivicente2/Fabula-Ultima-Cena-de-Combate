@@ -3,6 +3,14 @@ export type CombatSide = 'heroes' | 'enemies'
 export type AttributeName = 'dex' | 'ins' | 'mig' | 'wlp'
 export type DieSize = 6 | 8 | 10 | 12
 
+export type StatusEffect =
+  | 'slow'
+  | 'dazed'
+  | 'weak'
+  | 'shaken'
+  | 'enraged'
+  | 'poisoned'
+
 export type DamageType =
   | 'physical'
   | 'air'
@@ -30,15 +38,22 @@ export type CombatAttack = {
   damageType: DamageType
 }
 
+export type AbilityEffectType = 'damage' | 'heal' | 'status'
+export type AbilityTargetRelation = 'enemy' | 'ally'
+
 export type CombatAbility = {
   id: string
   name: string
+  effectType: AbilityEffectType
+  targetRelation: AbilityTargetRelation
   checkAttributeA: AttributeName
   checkAttributeB: AttributeName
   checkBonus: number
   mpCost: number
   damageBonus: number
-  damageType: DamageType
+  damageType: DamageType | null
+  healAmount: number
+  statusEffect: StatusEffect | null
 }
 
 export type Combatant = {
@@ -55,6 +70,11 @@ export type Combatant = {
   insDie: DieSize
   migDie: DieSize
   wlpDie: DieSize
+  baseDexDie: DieSize
+  baseInsDie: DieSize
+  baseMigDie: DieSize
+  baseWlpDie: DieSize
+  statuses: StatusEffect[]
   defense: number
   magicDefense: number
   attacks: CombatAttack[]
