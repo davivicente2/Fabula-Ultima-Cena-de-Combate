@@ -57,7 +57,7 @@ returns table (
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_battle_id uuid;
   v_result record;
@@ -95,7 +95,7 @@ begin
     v_result.next_side,
     v_next_revision;
 end;
-$;
+$$;
 
 create or replace function public.end_combatant_turn(
   p_combatant_id uuid,
@@ -112,7 +112,7 @@ returns table (
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_battle_id uuid;
   v_result record;
@@ -150,7 +150,7 @@ begin
     v_result.next_side,
     v_next_revision;
 end;
-$;
+$$;
 
 create or replace function public.perform_combatant_attack(
   p_attack_id uuid,
@@ -183,7 +183,7 @@ returns table (
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_battle_id uuid;
   v_attacker_id uuid;
@@ -255,7 +255,7 @@ begin
     v_next_side,
     v_next_revision;
 end;
-$;
+$$;
 
 -- Stale clients must not be able to bypass the revision-aware overloads.
 revoke execute on function public.perform_guard(uuid)
