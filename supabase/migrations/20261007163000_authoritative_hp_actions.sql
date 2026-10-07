@@ -39,6 +39,43 @@ create policy "Room members can read combat actions"
     )
   );
 
+-- Assigned control remains valid only while the user is still a room member.
+drop policy if exists "Hosts or assigned players can update combatants"
+  on public.combatants;
+
+create policy "Hosts or assigned players can update combatants"
+  on public.combatants
+  for update
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.battles
+      where battles.id = combatants.battle_id
+        and (
+          private.is_room_host(battles.room_id)
+          or (
+            combatants.controller_user_id = auth.uid()
+            and private.is_room_member(battles.room_id)
+          )
+        )
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.battles
+      where battles.id = combatants.battle_id
+        and (
+          private.is_room_host(battles.room_id)
+          or (
+            combatants.controller_user_id = auth.uid()
+            and private.is_room_member(battles.room_id)
+          )
+        )
+    )
+  );
+
 -- HP is no longer directly writable from the browser.
 revoke update (hp) on table public.combatants from authenticated;
 
@@ -77,7 +114,7 @@ begin
     raise exception 'O ajuste de HP não pode ser zero.';
   end if;
 
-  if abs(p_delta) > 9999 then
+  if p_delta < -9999 or p_delta > 9999 then
     raise exception 'Ajuste de HP fora do limite permitido.';
   end if;
 
@@ -104,7 +141,10 @@ begin
 
   if not (
     private.is_room_host(v_room_id)
-    or v_controller_user_id = v_user_id
+    or (
+      v_controller_user_id = v_user_id
+      and private.is_room_member(v_room_id)
+    )
   ) then
     raise exception 'Você não controla este combatente.';
   end if;
