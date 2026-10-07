@@ -10,6 +10,7 @@ import {
   loadCurrentPlayerIdentity,
   loadOrCreateBattle,
   performCombatantAttack,
+  performGuard,
   savePlayerDisplayName,
   startBattleTurns,
   stopBattleTurns,
@@ -194,6 +195,17 @@ function damageTypeLabel(damageType: DamageType | null) {
   return damageType ? labels[damageType] : '—'
 }
 
+function effectiveAffinity(
+  affinity: DamageAffinity | undefined,
+  guarding: boolean,
+): DamageAffinity | 'neutral' {
+  if (affinity === 'absorbs') return 'absorbs'
+  if (affinity === 'immune') return 'immune'
+  if (guarding && affinity === 'vulnerable') return 'neutral'
+  if (guarding) return 'resistant'
+  return affinity ?? 'neutral'
+}
+
 function affinityLabel(
   affinity: DamageAffinity | 'neutral' | null | undefined,
 ) {
@@ -214,6 +226,11 @@ function affinityLabel(
 function combatActionText(action: CombatAction) {
   const actor = action.actorDisplayName ?? 'Jogador'
   const target = action.targetName ?? 'combatente'
+
+  if (action.actionType === 'guard') {
+    const combatant = action.attackerName ?? action.targetName ?? 'Combatente'
+    return `${actor} · ${combatant} assumiu Guard e ganhou Resistência a todos os tipos de dano.`
+  }
 
   if (action.actionType === 'turn_end') {
     const combatant = action.attackerName ?? action.targetName ?? 'Combatente'
@@ -250,8 +267,9 @@ function combatActionText(action: CombatAction) {
         : action.damageAffinity === 'resistant'
           ? ' Resistência.'
           : ''
+    const guard = action.guardApplied ? ' Guard ativo.' : ''
 
-    return `${actor} · ${attacker} usou ${attack} em ${target}: ${rawDamage} de ${damageTypeLabel(action.damageType)} → ${hpLost} HP perdidos.${affinity}${critical}`
+    return `${actor} · ${attacker} usou ${attack} em ${target}: ${rawDamage} de ${damageTypeLabel(action.damageType)} → ${hpLost} HP perdidos.${affinity}${guard}${critical}`
   }
 
   if (action.appliedDelta < 0) {
@@ -301,6 +319,7 @@ export default function App() {
   const [attackTargetId, setAttackTargetId] = useState('')
   const [changingTurnState, setChangingTurnState] = useState(false)
   const [endingTurn, setEndingTurn] = useState(false)
+  const [guarding, setGuarding] = useState(false)
   const [turnState, setTurnState] = useState<BattleTurnState>({
     started: false,
     roundNumber: 0,
@@ -529,7 +548,11 @@ export default function App() {
       const state = await startBattleTurns(battleId, firstSide)
       setTurnState(state)
       setCombatants((current) =>
-        current.map((combatant) => ({ ...combatant, lastActedRound: 0 })),
+        current.map((combatant) => ({
+          ...combatant,
+          lastActedRound: 0,
+          guardStartedRound: null,
+        })),
       )
     } catch (error) {
       console.error(error)
@@ -555,7 +578,11 @@ export default function App() {
       const state = await stopBattleTurns(battleId)
       setTurnState(state)
       setCombatants((current) =>
-        current.map((combatant) => ({ ...combatant, lastActedRound: 0 })),
+        current.map((combatant) => ({
+          ...combatant,
+          lastActedRound: 0,
+          guardStartedRound: null,
+        })),
       )
     } catch (error) {
       console.error(error)
@@ -601,6 +628,45 @@ export default function App() {
       )
     } finally {
       setEndingTurn(false)
+    }
+  }
+
+  async function handleGuard() {
+    if (!selected || !canActSelected || guarding) return
+
+    setGuarding(true)
+    setErrorMessage(null)
+
+    try {
+      const result = await performGuard(selected.id)
+
+      setCombatants((current) =>
+        current.map((combatant) =>
+          combatant.id === result.combatantId
+            ? {
+                ...combatant,
+                lastActedRound: result.actedRound,
+                guardStartedRound: result.actedRound,
+              }
+            : combatant,
+        ),
+      )
+
+      setTurnState((current) => ({
+        ...current,
+        started: result.nextSide !== null,
+        roundNumber: result.nextRound,
+        currentSide: result.nextSide,
+      }))
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível usar Guard.',
+      )
+    } finally {
+      setGuarding(false)
     }
   }
 
@@ -798,7 +864,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Turnos autoritativos · v0.10</span>
+          <span className="eyebrow">Guard autoritativo · v0.11</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -872,9 +938,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            Rodadas e turnos agora são controlados pelo backend. Cada
-            participante pode agir uma vez por rodada e os lados alternam
-            enquanto ainda houver combatentes disponíveis.
+            Guard agora é uma ação autoritativa. Ela consome o turno e concede
+            Resistência a todos os tipos de dano até o começo da próxima ação
+            desse combatente.
           </p>
 
           <div className="player-session">
@@ -1026,6 +1092,10 @@ export default function App() {
                       ? 'Pode agir agora'
                       : 'Aguardando turno'}
                 </span>
+                {selected.guardStartedRound !== null &&
+                selected.guardStartedRound !== undefined ? (
+                  <strong>Guard ativo · Resistência temporária</strong>
+                ) : null}
                 {selectedAttack ? (
                   <>
                     <strong>{selectedAttack.name}</strong>
@@ -1063,8 +1133,15 @@ export default function App() {
                       {target.name} · DEF {target.defense}
                       {selectedAttack
                         ? ` · ${affinityLabel(
-                            target.affinities[selectedAttack.damageType],
-                          )}`
+                            effectiveAffinity(
+                              target.affinities[selectedAttack.damageType],
+                              target.guardStartedRound !== null &&
+                                target.guardStartedRound !== undefined,
+                            ),
+                          )}${target.guardStartedRound !== null &&
+                          target.guardStartedRound !== undefined
+                            ? ' (Guard)'
+                            : ''}`
                         : ''}
                     </option>
                   ))}
@@ -1101,6 +1178,7 @@ export default function App() {
                           {action.damageType
                             ? ` · ${damageTypeLabel(action.damageType)} / ${affinityLabel(action.damageAffinity)}`
                             : ''}
+                          {action.guardApplied ? ' · Guard' : ''}
                         </>
                       ) : null}
                       {' '}· HP {action.previousHp} → {action.resultingHp}
@@ -1198,6 +1276,13 @@ export default function App() {
             }
           >
             {attacking ? 'Atacando…' : 'Atacar'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleGuard()}
+            disabled={!canActSelected || guarding}
+          >
+            {guarding ? 'Defendendo…' : 'Guard'}
           </button>
           <button
             type="button"
