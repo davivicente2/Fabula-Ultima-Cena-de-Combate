@@ -35,6 +35,7 @@ type CombatantRow = {
   defense: number
   magic_defense: number
   last_acted_round: number
+  guard_started_round: number | null
 }
 
 type CombatAttackRow = {
@@ -115,7 +116,7 @@ type CombatActionRow = {
   actor_display_name: string | null
   target_combatant_id: string | null
   target_name: string | null
-  action_type: 'hp_adjustment' | 'attack' | 'turn_end'
+  action_type: 'hp_adjustment' | 'attack' | 'turn_end' | 'guard'
   requested_delta: number
   applied_delta: number
   previous_hp: number
@@ -135,6 +136,7 @@ type CombatActionRow = {
   damage_type: DamageType | null
   damage_affinity: DamageAffinity | 'neutral' | null
   round_number: number | null
+  guard_applied: boolean | null
   created_at: string
 }
 
@@ -189,7 +191,7 @@ export type CombatAction = {
   actorDisplayName: string | null
   targetCombatantId: string | null
   targetName: string | null
-  actionType: 'hp_adjustment' | 'attack' | 'turn_end'
+  actionType: 'hp_adjustment' | 'attack' | 'turn_end' | 'guard'
   requestedDelta: number
   appliedDelta: number
   previousHp: number
@@ -209,6 +211,7 @@ export type CombatAction = {
   damageType: DamageType | null
   damageAffinity: DamageAffinity | 'neutral' | null
   roundNumber: number | null
+  guardApplied: boolean | null
   createdAt: string
 }
 
@@ -253,6 +256,7 @@ function toCombatant(
     attacks,
     affinities,
     lastActedRound: row.last_acted_round,
+    guardStartedRound: row.guard_started_round,
     isActive: row.is_active,
     controllerUserId: row.controller_user_id,
   }
@@ -298,6 +302,7 @@ function toCombatAction(row: CombatActionRow): CombatAction {
     damageType: row.damage_type,
     damageAffinity: row.damage_affinity,
     roundNumber: row.round_number,
+    guardApplied: row.guard_applied,
     createdAt: row.created_at,
   }
 }
@@ -306,7 +311,7 @@ async function loadCombatants(battleId: string) {
   const { data, error } = await supabase
     .from('combatants')
     .select(
-      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, defense, magic_defense, last_acted_round',
+      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, defense, magic_defense, last_acted_round, guard_started_round',
     )
     .eq('battle_id', battleId)
     .order('sort_order', { ascending: true })
@@ -667,7 +672,7 @@ export async function loadCombatActions(
   const { data, error } = await supabase
     .from('combat_actions')
     .select(
-      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, created_at',
+      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, guard_applied, created_at',
     )
     .eq('battle_id', battleId)
     .order('created_at', { ascending: false })
@@ -711,6 +716,26 @@ export async function stopBattleTurns(
 export async function endCombatantTurn(combatantId: string) {
   const { data, error } = await supabase
     .rpc('end_combatant_turn', {
+      p_combatant_id: combatantId,
+    })
+    .single()
+
+  if (error) throw error
+
+  const row = data as EndTurnRpcRow
+
+  return {
+    battleId: row.battle_id,
+    combatantId: row.combatant_id,
+    actedRound: row.acted_round,
+    nextRound: row.next_round,
+    nextSide: row.next_side,
+  }
+}
+
+export async function performGuard(combatantId: string) {
+  const { data, error } = await supabase
+    .rpc('perform_guard', {
       p_combatant_id: combatantId,
     })
     .single()

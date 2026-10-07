@@ -31,6 +31,11 @@ export function CombatantCard({
 
       <strong>{combatant.name}</strong>
 
+      {combatant.guardStartedRound !== null &&
+      combatant.guardStartedRound !== undefined ? (
+        <span className="combatant__status">Guard</span>
+      ) : null}
+
       <div className="combatant__resources">
         <ResourceBar label="HP" value={combatant.hp} max={combatant.maxHp} />
         <ResourceBar label="MP" value={combatant.mp} max={combatant.maxMp} />

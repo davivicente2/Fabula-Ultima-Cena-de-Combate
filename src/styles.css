@@ -826,3 +826,18 @@ h2 {
     flex: 1;
   }
 }
+
+
+.combatant__status {
+  display: table;
+  margin: -3px auto 9px;
+  padding: 3px 7px;
+  border: 1px solid rgba(121, 201, 149, 0.28);
+  border-radius: 999px;
+  color: #a9d8b9;
+  background: rgba(121, 201, 149, 0.09);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
