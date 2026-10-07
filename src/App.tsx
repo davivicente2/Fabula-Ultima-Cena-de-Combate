@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CombatantCard } from './components/CombatantCard'
+import {
+  loadOrCreateBattle,
+  saveCombatantHp,
+} from './lib/battleRepository'
 import type { Combatant } from './types/combat'
 
-const initialCombatants: Combatant[] = [
+const initialCombatants: Omit<Combatant, 'id'>[] = [
   {
-    id: 'hero-aurora',
     name: 'Aurora',
     side: 'heroes',
     hp: 42,
@@ -16,7 +19,6 @@ const initialCombatants: Combatant[] = [
     isActive: true,
   },
   {
-    id: 'hero-cael',
     name: 'Cael',
     side: 'heroes',
     hp: 34,
@@ -27,7 +29,6 @@ const initialCombatants: Combatant[] = [
     maxIp: 6,
   },
   {
-    id: 'enemy-wolf',
     name: 'Lobo de Cinzas',
     side: 'enemies',
     hp: 30,
@@ -38,7 +39,6 @@ const initialCombatants: Combatant[] = [
     maxIp: 1,
   },
   {
-    id: 'enemy-boss',
     name: 'Cavaleiro Rubro',
     side: 'enemies',
     hp: 78,
@@ -50,12 +50,44 @@ const initialCombatants: Combatant[] = [
   },
 ]
 
+type ConnectionStatus = 'connecting' | 'online' | 'error'
+
 export default function App() {
-  // useState é a "memória" desta tela.
-  // Quando combatants muda, o React atualiza a interface.
-  const [combatants, setCombatants] =
-    useState<Combatant[]>(initialCombatants)
-  const [selectedId, setSelectedId] = useState(initialCombatants[0].id)
+  const initializationStarted = useRef(false)
+
+  const [combatants, setCombatants] = useState<Combatant[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [battleName, setBattleName] = useState('Carregando batalha…')
+  const [connectionStatus, setConnectionStatus] =
+    useState<ConnectionStatus>('connecting')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [savingHp, setSavingHp] = useState(false)
+
+  useEffect(() => {
+    if (initializationStarted.current) return
+    initializationStarted.current = true
+
+    async function initializeBattle() {
+      try {
+        const battle = await loadOrCreateBattle(initialCombatants)
+
+        setCombatants(battle.combatants)
+        setSelectedId(battle.combatants[0]?.id ?? null)
+        setBattleName(battle.name)
+        setConnectionStatus('online')
+      } catch (error) {
+        console.error(error)
+        setConnectionStatus('error')
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : 'Falha desconhecida ao conectar ao Supabase.',
+        )
+      }
+    }
+
+    void initializeBattle()
+  }, [])
 
   const selected = useMemo(
     () => combatants.find((combatant) => combatant.id === selectedId),
@@ -65,35 +97,59 @@ export default function App() {
   const heroes = combatants.filter((combatant) => combatant.side === 'heroes')
   const enemies = combatants.filter((combatant) => combatant.side === 'enemies')
 
-  function changeHp(amount: number) {
-    if (!selected) return
+  async function changeHp(amount: number) {
+    if (!selected || connectionStatus !== 'online' || savingHp) return
 
-    setCombatants((current) =>
-      current.map((combatant) =>
-        combatant.id === selected.id
-          ? {
-              ...combatant,
-              hp: Math.max(
-                0,
-                Math.min(combatant.maxHp, combatant.hp + amount),
-              ),
-            }
-          : combatant,
-      ),
+    const nextHp = Math.max(
+      0,
+      Math.min(selected.maxHp, selected.hp + amount),
     )
+
+    if (nextHp === selected.hp) return
+
+    setSavingHp(true)
+    setErrorMessage(null)
+
+    try {
+      const savedHp = await saveCombatantHp(selected.id, nextHp)
+
+      setCombatants((current) =>
+        current.map((combatant) =>
+          combatant.id === selected.id
+            ? { ...combatant, hp: savedHp }
+            : combatant,
+        ),
+      )
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível salvar o HP no Supabase.',
+      )
+    } finally {
+      setSavingHp(false)
+    }
   }
+
+  const connectionLabel =
+    connectionStatus === 'online'
+      ? 'Supabase conectado'
+      : connectionStatus === 'error'
+        ? 'Erro de conexão'
+        : 'Conectando ao Supabase…'
 
   return (
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Protótipo local · v0.1</span>
+          <span className="eyebrow">Persistência Supabase · v0.2</span>
           <h1>Cena de Combate</h1>
         </div>
 
-        <div className="connection-pill">
+        <div className="connection-pill" data-status={connectionStatus}>
           <span className="connection-pill__dot" />
-          Offline por enquanto
+          {connectionLabel}
         </div>
       </header>
 
@@ -132,19 +188,30 @@ export default function App() {
 
       <section className="command-panel">
         <div>
-          <span className="eyebrow">Selecionado</span>
+          <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            Estes botões ainda alteram somente o estado deste navegador.
-            Depois, essa mudança virá do servidor e será sincronizada com todos.
+            O HP agora é salvo no Supabase. Altere um valor e recarregue a
+            página: o estado deve continuar igual.
           </p>
+          {errorMessage ? (
+            <p className="connection-error">{errorMessage}</p>
+          ) : null}
         </div>
 
         <div className="command-panel__buttons">
-          <button type="button" onClick={() => changeHp(-5)}>
+          <button
+            type="button"
+            onClick={() => void changeHp(-5)}
+            disabled={!selected || connectionStatus !== 'online' || savingHp}
+          >
             Dano −5
           </button>
-          <button type="button" onClick={() => changeHp(5)}>
+          <button
+            type="button"
+            onClick={() => void changeHp(5)}
+            disabled={!selected || connectionStatus !== 'online' || savingHp}
+          >
             Cura +5
           </button>
           <button type="button" disabled>
