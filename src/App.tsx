@@ -107,7 +107,6 @@ const initialCombatants: CombatantSeed[] = [
         damageType: 'bolt',
       },
     ],
-    abilities: [],
     affinities: {
       physical: 'vulnerable',
       poison: 'absorbs',
@@ -138,6 +137,7 @@ const initialCombatants: CombatantSeed[] = [
         damageType: 'poison',
       },
     ],
+    abilities: [],
     affinities: {
       physical: 'vulnerable',
     },
