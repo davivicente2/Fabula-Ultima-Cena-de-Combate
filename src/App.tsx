@@ -1464,7 +1464,7 @@ export default function App() {
     setOnlinePlayers([])
 
     try {
-      const battle = await joinBattleRoom(joinCode, initialCombatants)
+      const battle = await joinBattleRoom(joinCode)
       await applyBattle(battle)
       setConnectionStatus('online')
     } catch (error) {
