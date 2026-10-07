@@ -51,15 +51,17 @@ returns table (
   combatant_id uuid,
   acted_round integer,
   next_round integer,
-  next_side text
+  next_side text,
+  next_revision bigint
 )
 language plpgsql
 security definer
 set search_path = ''
-as $$
+as $
 declare
   v_battle_id uuid;
   v_result record;
+  v_next_revision bigint;
 begin
   select combatants.battle_id
   into v_battle_id
@@ -81,7 +83,8 @@ begin
 
   update public.battles
   set turn_revision = turn_revision + 1
-  where id = v_battle_id;
+  where id = v_battle_id
+  returning turn_revision into v_next_revision;
 
   return query
   select
@@ -89,9 +92,10 @@ begin
     v_result.combatant_id,
     v_result.acted_round,
     v_result.next_round,
-    v_result.next_side;
+    v_result.next_side,
+    v_next_revision;
 end;
-$$;
+$;
 
 create or replace function public.end_combatant_turn(
   p_combatant_id uuid,
@@ -102,15 +106,17 @@ returns table (
   combatant_id uuid,
   acted_round integer,
   next_round integer,
-  next_side text
+  next_side text,
+  next_revision bigint
 )
 language plpgsql
 security definer
 set search_path = ''
-as $$
+as $
 declare
   v_battle_id uuid;
   v_result record;
+  v_next_revision bigint;
 begin
   select combatants.battle_id
   into v_battle_id
@@ -132,7 +138,8 @@ begin
 
   update public.battles
   set turn_revision = turn_revision + 1
-  where id = v_battle_id;
+  where id = v_battle_id
+  returning turn_revision into v_next_revision;
 
   return query
   select
@@ -140,9 +147,10 @@ begin
     v_result.combatant_id,
     v_result.acted_round,
     v_result.next_round,
-    v_result.next_side;
+    v_result.next_side,
+    v_next_revision;
 end;
-$$;
+$;
 
 create or replace function public.perform_combatant_attack(
   p_attack_id uuid,
@@ -166,18 +174,27 @@ returns table (
   damage_type text,
   damage_affinity text,
   previous_hp integer,
-  resulting_hp integer
+  resulting_hp integer,
+  acted_round integer,
+  next_round integer,
+  next_side text,
+  next_revision bigint
 )
 language plpgsql
 security definer
 set search_path = ''
-as $$
+as $
 declare
   v_battle_id uuid;
+  v_attacker_id uuid;
   v_result record;
+  v_acted_round integer;
+  v_next_round integer;
+  v_next_side text;
+  v_next_revision bigint;
 begin
-  select combatants.battle_id
-  into v_battle_id
+  select combatants.battle_id, combatants.id
+  into v_battle_id, v_attacker_id
   from public.combatant_attacks
   join public.combatants
     on combatants.id = combatant_attacks.combatant_id
@@ -199,9 +216,20 @@ begin
     p_target_id
   );
 
+  select combatants.last_acted_round
+  into v_acted_round
+  from public.combatants
+  where combatants.id = v_attacker_id;
+
+  select battles.round_number, battles.current_side
+  into v_next_round, v_next_side
+  from public.battles
+  where battles.id = v_battle_id;
+
   update public.battles
   set turn_revision = turn_revision + 1
-  where id = v_battle_id;
+  where id = v_battle_id
+  returning turn_revision into v_next_revision;
 
   return query
   select
@@ -221,9 +249,13 @@ begin
     v_result.damage_type,
     v_result.damage_affinity,
     v_result.previous_hp,
-    v_result.resulting_hp;
+    v_result.resulting_hp,
+    v_acted_round,
+    v_next_round,
+    v_next_side,
+    v_next_revision;
 end;
-$$;
+$;
 
 -- Stale clients must not be able to bypass the revision-aware overloads.
 revoke execute on function public.perform_guard(uuid)
