@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import type {
   AttributeName,
+  CombatAbility,
   CombatAttack,
   Combatant,
   CombatSide,
@@ -11,8 +12,13 @@ import type {
 } from '../types/combat'
 
 export type CombatAttackSeed = Omit<CombatAttack, 'id'>
-export type CombatantSeed = Omit<Combatant, 'id' | 'attacks' | 'affinities'> & {
+export type CombatAbilitySeed = Omit<CombatAbility, 'id'>
+export type CombatantSeed = Omit<
+  Combatant,
+  'id' | 'attacks' | 'abilities' | 'affinities'
+> & {
   attacks: CombatAttackSeed[]
+  abilities: CombatAbilitySeed[]
   affinities: Partial<Record<DamageType, DamageAffinity>>
 }
 
@@ -46,6 +52,19 @@ type CombatAttackRow = {
   accuracy_attribute_a: AttributeName
   accuracy_attribute_b: AttributeName
   accuracy_bonus: number
+  damage_bonus: number
+  damage_type: DamageType
+  sort_order: number
+}
+
+type CombatAbilityRow = {
+  id: string
+  combatant_id: string
+  name: string
+  check_attribute_a: AttributeName
+  check_attribute_b: AttributeName
+  check_bonus: number
+  mp_cost: number
   damage_bonus: number
   damage_type: DamageType
   sort_order: number
@@ -135,6 +154,7 @@ type CombatActionRow = {
     | 'turn_end'
     | 'guard'
     | 'resource_adjustment'
+    | 'ability'
   requested_delta: number
   applied_delta: number
   previous_hp: number
@@ -142,6 +162,7 @@ type CombatActionRow = {
   attacker_combatant_id: string | null
   attacker_name: string | null
   attack_name: string | null
+  ability_name: string | null
   roll_a: number | null
   roll_b: number | null
   check_total: number | null
@@ -159,6 +180,32 @@ type CombatActionRow = {
   previous_resource: number | null
   resulting_resource: number | null
   created_at: string
+}
+
+type CombatAbilityRpcRow = {
+  action_id: string
+  caster_id: string
+  target_id: string
+  ability_name: string
+  roll_a: number
+  roll_b: number
+  check_total: number
+  high_roll: number
+  target_magic_defense: number
+  is_hit: boolean
+  is_critical: boolean
+  is_fumble: boolean
+  damage: number
+  damage_type: DamageType
+  damage_affinity: DamageAffinity | 'neutral'
+  previous_hp: number
+  resulting_hp: number
+  previous_mp: number
+  resulting_mp: number
+  acted_round: number
+  next_round: number
+  next_side: CombatSide | null
+  next_revision: number
 }
 
 type CombatAttackRpcRow = {
@@ -223,6 +270,7 @@ export type CombatAction = {
     | 'turn_end'
     | 'guard'
     | 'resource_adjustment'
+    | 'ability'
   requestedDelta: number
   appliedDelta: number
   previousHp: number
@@ -230,6 +278,7 @@ export type CombatAction = {
   attackerCombatantId: string | null
   attackerName: string | null
   attackName: string | null
+  abilityName: string | null
   rollA: number | null
   rollB: number | null
   checkTotal: number | null
@@ -269,6 +318,7 @@ async function ensureAnonymousSession() {
 function toCombatant(
   row: CombatantRow,
   attacks: CombatAttack[] = [],
+  abilities: CombatAbility[] = [],
   affinities: Partial<Record<DamageType, DamageAffinity>> = {},
 ): Combatant {
   return {
@@ -288,11 +338,25 @@ function toCombatant(
     defense: row.defense,
     magicDefense: row.magic_defense,
     attacks,
+    abilities,
     affinities,
     lastActedRound: row.last_acted_round,
     guardStartedRound: row.guard_started_round,
     isActive: row.is_active,
     controllerUserId: row.controller_user_id,
+  }
+}
+
+function toCombatAbility(row: CombatAbilityRow): CombatAbility {
+  return {
+    id: row.id,
+    name: row.name,
+    checkAttributeA: row.check_attribute_a,
+    checkAttributeB: row.check_attribute_b,
+    checkBonus: row.check_bonus,
+    mpCost: row.mp_cost,
+    damageBonus: row.damage_bonus,
+    damageType: row.damage_type,
   }
 }
 
@@ -324,6 +388,7 @@ function toCombatAction(row: CombatActionRow): CombatAction {
     attackerCombatantId: row.attacker_combatant_id,
     attackerName: row.attacker_name,
     attackName: row.attack_name,
+    abilityName: row.ability_name,
     rollA: row.roll_a,
     rollB: row.roll_b,
     checkTotal: row.check_total,
@@ -360,24 +425,34 @@ async function loadCombatants(battleId: string) {
 
   const combatantIds = rows.map((row) => row.id)
 
-  const [attacksResult, affinitiesResult] = await Promise.all([
-    supabase
-      .from('combatant_attacks')
-      .select(
-        'id, combatant_id, name, accuracy_attribute_a, accuracy_attribute_b, accuracy_bonus, damage_bonus, damage_type, sort_order',
-      )
-      .in('combatant_id', combatantIds)
-      .order('sort_order', { ascending: true }),
-    supabase
-      .from('combatant_affinities')
-      .select('combatant_id, damage_type, affinity')
-      .in('combatant_id', combatantIds),
-  ])
+  const [attacksResult, abilitiesResult, affinitiesResult] =
+    await Promise.all([
+      supabase
+        .from('combatant_attacks')
+        .select(
+          'id, combatant_id, name, accuracy_attribute_a, accuracy_attribute_b, accuracy_bonus, damage_bonus, damage_type, sort_order',
+        )
+        .in('combatant_id', combatantIds)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('combatant_abilities')
+        .select(
+          'id, combatant_id, name, check_attribute_a, check_attribute_b, check_bonus, mp_cost, damage_bonus, damage_type, sort_order',
+        )
+        .in('combatant_id', combatantIds)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('combatant_affinities')
+        .select('combatant_id, damage_type, affinity')
+        .in('combatant_id', combatantIds),
+    ])
 
   if (attacksResult.error) throw attacksResult.error
+  if (abilitiesResult.error) throw abilitiesResult.error
   if (affinitiesResult.error) throw affinitiesResult.error
 
   const attacks = attacksResult.data as CombatAttackRow[]
+  const abilities = abilitiesResult.data as CombatAbilityRow[]
   const affinities = affinitiesResult.data as CombatantAffinityRow[]
 
   return rows.map((row) => {
@@ -396,6 +471,9 @@ async function loadCombatants(battleId: string) {
       attacks
         .filter((attack) => attack.combatant_id === row.id)
         .map(toCombatAttack),
+      abilities
+        .filter((ability) => ability.combatant_id === row.id)
+        .map(toCombatAbility),
       combatantAffinities,
     )
   })
@@ -450,6 +528,29 @@ async function seedCombatants(battleId: string, seeds: CombatantSeed[]) {
       .insert(attackRows)
 
     if (attackError) throw attackError
+  }
+
+  const abilityRows = inserted.flatMap((row) => {
+    const seed = seeds[row.sort_order]
+    return seed.abilities.map((ability, index) => ({
+      combatant_id: row.id,
+      name: ability.name,
+      check_attribute_a: ability.checkAttributeA,
+      check_attribute_b: ability.checkAttributeB,
+      check_bonus: ability.checkBonus,
+      mp_cost: ability.mpCost,
+      damage_bonus: ability.damageBonus,
+      damage_type: ability.damageType,
+      sort_order: index,
+    }))
+  })
+
+  if (abilityRows.length > 0) {
+    const { error: abilityError } = await supabase
+      .from('combatant_abilities')
+      .insert(abilityRows)
+
+    if (abilityError) throw abilityError
   }
 
   const affinityRows = inserted.flatMap((row) => {
@@ -739,7 +840,7 @@ export async function loadCombatActions(
   const { data, error } = await supabase
     .from('combat_actions')
     .select(
-      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, guard_applied, resource_name, previous_resource, resulting_resource, created_at',
+      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, ability_name, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, guard_applied, resource_name, previous_resource, resulting_resource, created_at',
     )
     .eq('battle_id', battleId)
     .order('created_at', { ascending: false })
@@ -823,6 +924,50 @@ export async function performGuard(
   return {
     battleId: row.battle_id,
     combatantId: row.combatant_id,
+    actedRound: row.acted_round,
+    nextRound: row.next_round,
+    nextSide: row.next_side,
+    nextRevision: row.next_revision,
+  }
+}
+
+export async function performCombatantAbility(
+  abilityId: string,
+  targetId: string,
+  expectedRevision: number,
+) {
+  const { data, error } = await supabase
+    .rpc('perform_combatant_ability', {
+      p_ability_id: abilityId,
+      p_target_id: targetId,
+      p_expected_revision: expectedRevision,
+    })
+    .single()
+
+  if (error) throw error
+
+  const row = data as CombatAbilityRpcRow
+
+  return {
+    actionId: row.action_id,
+    casterId: row.caster_id,
+    targetId: row.target_id,
+    abilityName: row.ability_name,
+    rollA: row.roll_a,
+    rollB: row.roll_b,
+    checkTotal: row.check_total,
+    highRoll: row.high_roll,
+    targetMagicDefense: row.target_magic_defense,
+    isHit: row.is_hit,
+    isCritical: row.is_critical,
+    isFumble: row.is_fumble,
+    damage: row.damage,
+    damageType: row.damage_type,
+    damageAffinity: row.damage_affinity,
+    previousHp: row.previous_hp,
+    resultingHp: row.resulting_hp,
+    previousMp: row.previous_mp,
+    resultingMp: row.resulting_mp,
     actedRound: row.acted_round,
     nextRound: row.next_round,
     nextSide: row.next_side,
