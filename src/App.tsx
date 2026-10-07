@@ -4,16 +4,21 @@ import { CombatantCard } from './components/CombatantCard'
 import {
   applyCombatantHpDelta,
   assignCombatantController,
+  endCombatantTurn,
   joinBattleRoom,
   loadCombatActions,
   loadCurrentPlayerIdentity,
   loadOrCreateBattle,
   performCombatantAttack,
   savePlayerDisplayName,
+  startBattleTurns,
+  stopBattleTurns,
+  subscribeToBattleTurnState,
   subscribeToCombatActions,
   subscribeToCombatantUpdates,
 } from './lib/battleRepository'
 import type {
+  BattleTurnState,
   CombatAction,
   CombatantSeed,
   LoadedBattle,
@@ -26,6 +31,7 @@ import type { OnlinePlayer } from './lib/presence'
 import type {
   AttributeName,
   Combatant,
+  CombatSide,
   DamageAffinity,
   DamageType,
 } from './types/combat'
@@ -60,7 +66,6 @@ const initialCombatants: CombatantSeed[] = [
       physical: 'resistant',
       poison: 'immune',
     },
-    isActive: true,
   },
   {
     name: 'Cael',
@@ -167,6 +172,12 @@ function roleLabel(role: PlayerIdentity['role']) {
   return role === 'host' ? 'GM' : 'Jogador'
 }
 
+function sideLabel(side: CombatSide | null) {
+  if (side === 'heroes') return 'Heróis'
+  if (side === 'enemies') return 'Inimigos'
+  return '—'
+}
+
 function damageTypeLabel(damageType: DamageType | null) {
   const labels: Record<DamageType, string> = {
     physical: 'Físico',
@@ -203,6 +214,11 @@ function affinityLabel(
 function combatActionText(action: CombatAction) {
   const actor = action.actorDisplayName ?? 'Jogador'
   const target = action.targetName ?? 'combatente'
+
+  if (action.actionType === 'turn_end') {
+    const combatant = action.attackerName ?? action.targetName ?? 'Combatente'
+    return `${actor} encerrou o turno de ${combatant} sem atacar.`
+  }
 
   if (action.actionType === 'attack') {
     const attacker = action.attackerName ?? 'Combatente'
@@ -283,6 +299,14 @@ export default function App() {
   const [assigningController, setAssigningController] = useState(false)
   const [attacking, setAttacking] = useState(false)
   const [attackTargetId, setAttackTargetId] = useState('')
+  const [changingTurnState, setChangingTurnState] = useState(false)
+  const [endingTurn, setEndingTurn] = useState(false)
+  const [turnState, setTurnState] = useState<BattleTurnState>({
+    started: false,
+    roundNumber: 0,
+    initiativeSide: null,
+    currentSide: null,
+  })
 
   const [playerIdentity, setPlayerIdentity] =
     useState<PlayerIdentity | null>(null)
@@ -302,6 +326,7 @@ export default function App() {
     setRoomCode(battle.roomCode)
     setJoinCode('')
     setCombatActions([])
+    setTurnState(battle.turnState)
     setRoomInUrl(battle.roomCode)
 
     let identity = await loadCurrentPlayerIdentity(battle.roomId)
@@ -344,6 +369,12 @@ export default function App() {
 
     void initializeBattle()
   }, [])
+
+  useEffect(() => {
+    if (!battleId || connectionStatus !== 'online') return
+
+    return subscribeToBattleTurnState(battleId, setTurnState)
+  }, [battleId, connectionStatus])
 
   useEffect(() => {
     if (!battleId || connectionStatus !== 'online') return
@@ -450,6 +481,25 @@ export default function App() {
   const attackTarget = attackTargets.find(
     (combatant) => combatant.id === attackTargetId,
   )
+  const selectedHasActed =
+    Boolean(selected) &&
+    turnState.started &&
+    (selected?.lastActedRound ?? 0) >= turnState.roundNumber
+  const canActSelected =
+    Boolean(selected) &&
+    canControlSelected &&
+    turnState.started &&
+    selected?.side === turnState.currentSide &&
+    !selectedHasActed &&
+    (selected?.hp ?? 0) > 0
+  const availableCurrentSide = turnState.currentSide
+    ? combatants.filter(
+        (combatant) =>
+          combatant.side === turnState.currentSide &&
+          combatant.hp > 0 &&
+          (combatant.lastActedRound ?? 0) < turnState.roundNumber,
+      )
+    : []
 
   useEffect(() => {
     if (!selected) {
@@ -466,6 +516,93 @@ export default function App() {
       setAttackTargetId(targets[0]?.id ?? '')
     }
   }, [selected, combatants, attackTargetId])
+
+  async function handleStartTurns(firstSide: CombatSide) {
+    if (!battleId || playerIdentity?.role !== 'host' || changingTurnState) {
+      return
+    }
+
+    setChangingTurnState(true)
+    setErrorMessage(null)
+
+    try {
+      const state = await startBattleTurns(battleId, firstSide)
+      setTurnState(state)
+      setCombatants((current) =>
+        current.map((combatant) => ({ ...combatant, lastActedRound: 0 })),
+      )
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível iniciar o conflito.',
+      )
+    } finally {
+      setChangingTurnState(false)
+    }
+  }
+
+  async function handleStopTurns() {
+    if (!battleId || playerIdentity?.role !== 'host' || changingTurnState) {
+      return
+    }
+
+    setChangingTurnState(true)
+    setErrorMessage(null)
+
+    try {
+      const state = await stopBattleTurns(battleId)
+      setTurnState(state)
+      setCombatants((current) =>
+        current.map((combatant) => ({ ...combatant, lastActedRound: 0 })),
+      )
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível encerrar o conflito.',
+      )
+    } finally {
+      setChangingTurnState(false)
+    }
+  }
+
+  async function handleEndTurn() {
+    if (!selected || !canActSelected || endingTurn) return
+
+    setEndingTurn(true)
+    setErrorMessage(null)
+
+    try {
+      const result = await endCombatantTurn(selected.id)
+
+      setCombatants((current) =>
+        current.map((combatant) =>
+          combatant.id === result.combatantId
+            ? { ...combatant, lastActedRound: result.actedRound }
+            : combatant,
+        ),
+      )
+
+      setTurnState((current) => ({
+        ...current,
+        started: result.nextSide !== null,
+        roundNumber: result.nextRound,
+        currentSide: result.nextSide,
+      }))
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível encerrar o turno.',
+      )
+    } finally {
+      setEndingTurn(false)
+    }
+  }
 
   async function changeHp(amount: number) {
     if (
@@ -507,7 +644,7 @@ export default function App() {
       !selected ||
       !selectedAttack ||
       !attackTarget ||
-      !canControlSelected ||
+      !canActSelected ||
       connectionStatus !== 'online' ||
       attacking
     ) {
@@ -661,7 +798,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Afinidades de dano · v0.9</span>
+          <span className="eyebrow">Turnos autoritativos · v0.10</span>
           <h1>Cena de Combate</h1>
         </div>
 
@@ -700,10 +837,22 @@ export default function App() {
         </div>
 
         <div className="battlefield__turn">
-          <span>Turno atual</span>
+          <span>
+            {turnState.started ? `Rodada ${turnState.roundNumber}` : 'Conflito'}
+          </span>
           <strong>
-            {combatants.find((combatant) => combatant.isActive)?.name ?? '—'}
+            {turnState.started
+              ? `Vez dos ${sideLabel(turnState.currentSide)}`
+              : 'Não iniciado'}
           </strong>
+          {turnState.started ? (
+            <small>
+              Disponíveis:{' '}
+              {availableCurrentSide
+                .map((combatant) => combatant.name)
+                .join(', ') || '—'}
+            </small>
+          ) : null}
         </div>
 
         <div className="formation formation--heroes">
@@ -723,9 +872,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            O backend agora também resolve Afinidades de dano. Vulnerabilidade,
-            Resistência, Imunidade e Absorção são aplicadas pelo Supabase antes
-            de atualizar o HP e registrar o resultado.
+            Rodadas e turnos agora são controlados pelo backend. Cada
+            participante pode agir uma vez por rodada e os lados alternam
+            enquanto ainda houver combatentes disponíveis.
           </p>
 
           <div className="player-session">
@@ -789,6 +938,51 @@ export default function App() {
             </div>
           </div>
 
+          <div className="turn-panel">
+            <div>
+              <span className="turn-panel__label">Fluxo do conflito</span>
+              {turnState.started ? (
+                <strong>
+                  Rodada {turnState.roundNumber} · Vez dos{' '}
+                  {sideLabel(turnState.currentSide)}
+                </strong>
+              ) : (
+                <strong>Aguardando iniciativa.</strong>
+              )}
+            </div>
+
+            {playerIdentity?.role === 'host' ? (
+              <div className="turn-panel__controls">
+                {!turnState.started ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void handleStartTurns('heroes')}
+                      disabled={changingTurnState}
+                    >
+                      Heróis começam
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleStartTurns('enemies')}
+                      disabled={changingTurnState}
+                    >
+                      Inimigos começam
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void handleStopTurns()}
+                    disabled={changingTurnState}
+                  >
+                    Encerrar conflito
+                  </button>
+                )}
+              </div>
+            ) : null}
+          </div>
+
           {selected?.side === 'heroes' ? (
             <div className="assignment-panel">
               <span className="assignment-panel__label">
@@ -825,7 +1019,13 @@ export default function App() {
           {selected ? (
             <div className="attack-panel">
               <div className="attack-panel__summary">
-                <span className="attack-panel__label">Ataque básico</span>
+                <span className="attack-panel__label">
+                  {selectedHasActed
+                    ? 'Já agiu nesta rodada'
+                    : canActSelected
+                      ? 'Pode agir agora'
+                      : 'Aguardando turno'}
+                </span>
                 {selectedAttack ? (
                   <>
                     <strong>{selectedAttack.name}</strong>
@@ -856,7 +1056,7 @@ export default function App() {
                 <select
                   value={attackTargetId}
                   onChange={(event) => setAttackTargetId(event.target.value)}
-                  disabled={!canControlSelected || attacking}
+                  disabled={!canActSelected || attacking}
                 >
                   {attackTargets.map((target) => (
                     <option key={target.id} value={target.id}>
@@ -886,6 +1086,9 @@ export default function App() {
                     <span>{combatActionText(action)}</span>
                     <small>
                       {combatActionTime(action.createdAt)}
+                      {action.roundNumber !== null
+                        ? ` · R${action.roundNumber}`
+                        : ''}
                       {action.actionType === 'attack' ? (
                         <>
                           {' '}· Rolagem {action.rollA} + {action.rollB}
@@ -989,12 +1192,19 @@ export default function App() {
               !selected ||
               !selectedAttack ||
               !attackTarget ||
-              !canControlSelected ||
+              !canActSelected ||
               connectionStatus !== 'online' ||
               attacking
             }
           >
             {attacking ? 'Atacando…' : 'Atacar'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleEndTurn()}
+            disabled={!canActSelected || endingTurn}
+          >
+            {endingTurn ? 'Encerrando…' : 'Encerrar turno'}
           </button>
           <button type="button" disabled>
             Habilidade
