@@ -30,6 +30,17 @@ export type CombatAttack = {
   damageType: DamageType
 }
 
+export type CombatAbility = {
+  id: string
+  name: string
+  checkAttributeA: AttributeName
+  checkAttributeB: AttributeName
+  checkBonus: number
+  mpCost: number
+  damageBonus: number
+  damageType: DamageType
+}
+
 export type Combatant = {
   id: string
   name: string
@@ -47,6 +58,7 @@ export type Combatant = {
   defense: number
   magicDefense: number
   attacks: CombatAttack[]
+  abilities: CombatAbility[]
   affinities: Partial<Record<DamageType, DamageAffinity>>
   lastActedRound?: number
   guardStartedRound?: number | null
