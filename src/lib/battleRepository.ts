@@ -17,9 +17,24 @@ type CombatantRow = {
   sort_order: number
 }
 
+type RoomBattleRpcRow = {
+  room_id: string
+  room_code: string
+  battle_id: string
+  battle_name: string
+}
+
+type BattleRow = {
+  id: string
+  name: string
+  room_id: string
+}
+
 export type LoadedBattle = {
   id: string
   name: string
+  roomId: string
+  roomCode: string
   combatants: Combatant[]
 }
 
@@ -89,33 +104,22 @@ async function seedCombatants(battleId: string, seeds: CombatantSeed[]) {
   if (error) throw error
 }
 
-export async function loadOrCreateBattle(
+async function getRoomCode(roomId: string) {
+  const { data, error } = await supabase
+    .from('rooms')
+    .select('code')
+    .eq('id', roomId)
+    .single()
+
+  if (error) throw error
+
+  return data.code as string
+}
+
+async function hydrateBattle(
+  battle: BattleRow,
   initialCombatants: CombatantSeed[],
 ): Promise<LoadedBattle> {
-  await ensureAnonymousSession()
-
-  const { data: existingBattle, error: battleLookupError } = await supabase
-    .from('battles')
-    .select('id, name')
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle()
-
-  if (battleLookupError) throw battleLookupError
-
-  let battle = existingBattle
-
-  if (!battle) {
-    const { data: createdBattle, error: createBattleError } = await supabase
-      .from('battles')
-      .insert({ name: 'Batalha de teste' })
-      .select('id, name')
-      .single()
-
-    if (createBattleError) throw createBattleError
-    battle = createdBattle
-  }
-
   let combatants = await loadCombatants(battle.id)
 
   if (combatants.length === 0) {
@@ -126,8 +130,87 @@ export async function loadOrCreateBattle(
   return {
     id: battle.id,
     name: battle.name,
+    roomId: battle.room_id,
+    roomCode: await getRoomCode(battle.room_id),
     combatants,
   }
+}
+
+async function loadBattleFromRpc(
+  row: RoomBattleRpcRow,
+  initialCombatants: CombatantSeed[],
+): Promise<LoadedBattle> {
+  let combatants = await loadCombatants(row.battle_id)
+
+  if (combatants.length === 0) {
+    await seedCombatants(row.battle_id, initialCombatants)
+    combatants = await loadCombatants(row.battle_id)
+  }
+
+  return {
+    id: row.battle_id,
+    name: row.battle_name,
+    roomId: row.room_id,
+    roomCode: row.room_code,
+    combatants,
+  }
+}
+
+async function createBattleRoom(initialCombatants: CombatantSeed[]) {
+  const { data, error } = await supabase
+    .rpc('create_room_with_battle', { p_name: 'Batalha de teste' })
+    .single()
+
+  if (error) throw error
+
+  return loadBattleFromRpc(data as RoomBattleRpcRow, initialCombatants)
+}
+
+export async function joinBattleRoom(
+  code: string,
+  initialCombatants: CombatantSeed[],
+): Promise<LoadedBattle> {
+  await ensureAnonymousSession()
+
+  const normalizedCode = code.trim().toUpperCase()
+
+  if (!normalizedCode) {
+    throw new Error('Informe o código da sala.')
+  }
+
+  const { data, error } = await supabase
+    .rpc('join_room', { p_code: normalizedCode })
+    .single()
+
+  if (error) throw error
+
+  return loadBattleFromRpc(data as RoomBattleRpcRow, initialCombatants)
+}
+
+export async function loadOrCreateBattle(
+  initialCombatants: CombatantSeed[],
+  requestedRoomCode?: string | null,
+): Promise<LoadedBattle> {
+  await ensureAnonymousSession()
+
+  if (requestedRoomCode) {
+    return joinBattleRoom(requestedRoomCode, initialCombatants)
+  }
+
+  const { data: existingBattle, error: battleLookupError } = await supabase
+    .from('battles')
+    .select('id, name, room_id')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (battleLookupError) throw battleLookupError
+
+  if (existingBattle) {
+    return hydrateBattle(existingBattle as BattleRow, initialCombatants)
+  }
+
+  return createBattleRoom(initialCombatants)
 }
 
 export async function saveCombatantHp(combatantId: string, hp: number) {
@@ -141,4 +224,29 @@ export async function saveCombatantHp(combatantId: string, hp: number) {
   if (error) throw error
 
   return data.hp as number
+}
+
+export function subscribeToCombatantUpdates(
+  battleId: string,
+  onUpdate: (combatant: Combatant) => void,
+) {
+  const channel = supabase
+    .channel(`battle-${battleId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'combatants',
+        filter: `battle_id=eq.${battleId}`,
+      },
+      (payload) => {
+        onUpdate(toCombatant(payload.new as CombatantRow))
+      },
+    )
+    .subscribe()
+
+  return () => {
+    void supabase.removeChannel(channel)
+  }
 }
