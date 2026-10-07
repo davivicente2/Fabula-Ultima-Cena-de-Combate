@@ -72,6 +72,7 @@ type BattleRow = {
   round_number: number
   initiative_side: CombatSide | null
   current_side: CombatSide | null
+  turn_revision: number
 }
 
 type BattleTurnRpcRow = {
@@ -184,6 +185,7 @@ export type BattleTurnState = {
   roundNumber: number
   initiativeSide: CombatSide | null
   currentSide: CombatSide | null
+  turnRevision: number
 }
 
 export type LoadedBattle = {
@@ -480,12 +482,14 @@ function toBattleTurnState(row: {
   round_number: number
   initiative_side: CombatSide | null
   current_side: CombatSide | null
+  turn_revision: number
 }): BattleTurnState {
   return {
     started: row.conflict_started,
     roundNumber: row.round_number,
     initiativeSide: row.initiative_side,
     currentSide: row.current_side,
+    turnRevision: row.turn_revision,
   }
 }
 
@@ -495,7 +499,7 @@ async function loadBattleTurnState(
   const { data, error } = await supabase
     .from('battles')
     .select(
-      'conflict_started, round_number, initiative_side, current_side',
+      'conflict_started, round_number, initiative_side, current_side, turn_revision',
     )
     .eq('id', battleId)
     .single()
@@ -591,7 +595,7 @@ export async function loadOrCreateBattle(
   const { data: existingBattle, error: battleLookupError } = await supabase
     .from('battles')
     .select(
-      'id, name, room_id, conflict_started, round_number, initiative_side, current_side',
+      'id, name, room_id, conflict_started, round_number, initiative_side, current_side, turn_revision',
     )
     .order('created_at', { ascending: true })
     .limit(1)
@@ -745,7 +749,7 @@ export async function startBattleTurns(
   battleId: string,
   firstSide: CombatSide,
 ): Promise<BattleTurnState> {
-  const { data, error } = await supabase
+  const { error } = await supabase
     .rpc('start_battle_turns', {
       p_battle_id: battleId,
       p_first_side: firstSide,
@@ -754,13 +758,13 @@ export async function startBattleTurns(
 
   if (error) throw error
 
-  return toBattleTurnState(data as BattleTurnRpcRow)
+  return loadBattleTurnState(battleId)
 }
 
 export async function stopBattleTurns(
   battleId: string,
 ): Promise<BattleTurnState> {
-  const { data, error } = await supabase
+  const { error } = await supabase
     .rpc('stop_battle_turns', {
       p_battle_id: battleId,
     })
@@ -768,13 +772,17 @@ export async function stopBattleTurns(
 
   if (error) throw error
 
-  return toBattleTurnState(data as BattleTurnRpcRow)
+  return loadBattleTurnState(battleId)
 }
 
-export async function endCombatantTurn(combatantId: string) {
+export async function endCombatantTurn(
+  combatantId: string,
+  expectedRevision: number,
+) {
   const { data, error } = await supabase
     .rpc('end_combatant_turn', {
       p_combatant_id: combatantId,
+      p_expected_revision: expectedRevision,
     })
     .single()
 
@@ -791,10 +799,14 @@ export async function endCombatantTurn(combatantId: string) {
   }
 }
 
-export async function performGuard(combatantId: string) {
+export async function performGuard(
+  combatantId: string,
+  expectedRevision: number,
+) {
   const { data, error } = await supabase
     .rpc('perform_guard', {
       p_combatant_id: combatantId,
+      p_expected_revision: expectedRevision,
     })
     .single()
 
@@ -814,11 +826,13 @@ export async function performGuard(combatantId: string) {
 export async function performCombatantAttack(
   attackId: string,
   targetId: string,
+  expectedRevision: number,
 ) {
   const { data, error } = await supabase
     .rpc('perform_combatant_attack', {
       p_attack_id: attackId,
       p_target_id: targetId,
+      p_expected_revision: expectedRevision,
     })
     .single()
 
