@@ -76,8 +76,9 @@ create policy "Hosts or assigned players can update combatants"
     )
   );
 
--- HP is no longer directly writable from the browser.
-revoke update (hp) on table public.combatants from authenticated;
+-- Direct HP writes remain temporarily available during rollout so the
+-- currently deployed client keeps working. A follow-up migration revokes
+-- this privilege after the authoritative client is verified online.
 
 create or replace function public.apply_combatant_hp_delta(
   p_combatant_id uuid,
