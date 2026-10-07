@@ -1,5 +1,7 @@
 import { supabase } from './supabase'
 import type {
+  AbilityEffectType,
+  AbilityTargetRelation,
   AttributeName,
   CombatAbility,
   CombatAttack,
@@ -9,17 +11,27 @@ import type {
   DamageType,
   DieSize,
   ResourceName,
+  StatusEffect,
 } from '../types/combat'
 
 export type CombatAttackSeed = Omit<CombatAttack, 'id'>
 export type CombatAbilitySeed = Omit<CombatAbility, 'id'>
 export type CombatantSeed = Omit<
   Combatant,
-  'id' | 'attacks' | 'abilities' | 'affinities'
+  | 'id'
+  | 'attacks'
+  | 'abilities'
+  | 'affinities'
+  | 'baseDexDie'
+  | 'baseInsDie'
+  | 'baseMigDie'
+  | 'baseWlpDie'
+  | 'statuses'
 > & {
   attacks: CombatAttackSeed[]
   abilities: CombatAbilitySeed[]
   affinities: Partial<Record<DamageType, DamageAffinity>>
+  statuses?: StatusEffect[]
 }
 
 type CombatantRow = {
@@ -43,6 +55,11 @@ type CombatantRow = {
   magic_defense: number
   last_acted_round: number
   guard_started_round: number | null
+  base_dex_die: DieSize
+  base_ins_die: DieSize
+  base_mig_die: DieSize
+  base_wlp_die: DieSize
+  statuses: StatusEffect[]
 }
 
 type CombatAttackRow = {
@@ -61,12 +78,16 @@ type CombatAbilityRow = {
   id: string
   combatant_id: string
   name: string
+  effect_type: AbilityEffectType
+  target_relation: AbilityTargetRelation
   check_attribute_a: AttributeName
   check_attribute_b: AttributeName
   check_bonus: number
   mp_cost: number
   damage_bonus: number
-  damage_type: DamageType
+  damage_type: DamageType | null
+  heal_amount: number
+  status_effect: StatusEffect | null
   sort_order: number
 }
 
@@ -163,6 +184,9 @@ type CombatActionRow = {
   attacker_name: string | null
   attack_name: string | null
   ability_name: string | null
+  ability_effect_type: AbilityEffectType | null
+  status_effect: StatusEffect | null
+  healing: number | null
   roll_a: number | null
   roll_b: number | null
   check_total: number | null
@@ -196,8 +220,8 @@ type CombatAbilityRpcRow = {
   is_critical: boolean
   is_fumble: boolean
   damage: number
-  damage_type: DamageType
-  damage_affinity: DamageAffinity | 'neutral'
+  damage_type: DamageType | null
+  damage_affinity: DamageAffinity | 'neutral' | null
   previous_hp: number
   resulting_hp: number
   previous_mp: number
@@ -279,6 +303,9 @@ export type CombatAction = {
   attackerName: string | null
   attackName: string | null
   abilityName: string | null
+  abilityEffectType: AbilityEffectType | null
+  statusEffect: StatusEffect | null
+  healing: number | null
   rollA: number | null
   rollB: number | null
   checkTotal: number | null
@@ -335,6 +362,11 @@ function toCombatant(
     insDie: row.ins_die,
     migDie: row.mig_die,
     wlpDie: row.wlp_die,
+    baseDexDie: row.base_dex_die,
+    baseInsDie: row.base_ins_die,
+    baseMigDie: row.base_mig_die,
+    baseWlpDie: row.base_wlp_die,
+    statuses: row.statuses,
     defense: row.defense,
     magicDefense: row.magic_defense,
     attacks,
@@ -351,12 +383,16 @@ function toCombatAbility(row: CombatAbilityRow): CombatAbility {
   return {
     id: row.id,
     name: row.name,
+    effectType: row.effect_type,
+    targetRelation: row.target_relation,
     checkAttributeA: row.check_attribute_a,
     checkAttributeB: row.check_attribute_b,
     checkBonus: row.check_bonus,
     mpCost: row.mp_cost,
     damageBonus: row.damage_bonus,
     damageType: row.damage_type,
+    healAmount: row.heal_amount,
+    statusEffect: row.status_effect,
   }
 }
 
@@ -389,6 +425,9 @@ function toCombatAction(row: CombatActionRow): CombatAction {
     attackerName: row.attacker_name,
     attackName: row.attack_name,
     abilityName: row.ability_name,
+    abilityEffectType: row.ability_effect_type,
+    statusEffect: row.status_effect,
+    healing: row.healing,
     rollA: row.roll_a,
     rollB: row.roll_b,
     checkTotal: row.check_total,
@@ -413,7 +452,7 @@ async function loadCombatants(battleId: string) {
   const { data, error } = await supabase
     .from('combatants')
     .select(
-      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, defense, magic_defense, last_acted_round, guard_started_round',
+      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, base_dex_die, base_ins_die, base_mig_die, base_wlp_die, statuses, defense, magic_defense, last_acted_round, guard_started_round',
     )
     .eq('battle_id', battleId)
     .order('sort_order', { ascending: true })
@@ -437,7 +476,7 @@ async function loadCombatants(battleId: string) {
       supabase
         .from('combatant_abilities')
         .select(
-          'id, combatant_id, name, check_attribute_a, check_attribute_b, check_bonus, mp_cost, damage_bonus, damage_type, sort_order',
+          'id, combatant_id, name, effect_type, target_relation, check_attribute_a, check_attribute_b, check_bonus, mp_cost, damage_bonus, damage_type, heal_amount, status_effect, sort_order',
         )
         .in('combatant_id', combatantIds)
         .order('sort_order', { ascending: true }),
@@ -494,6 +533,11 @@ async function seedCombatants(battleId: string, seeds: CombatantSeed[]) {
     ins_die: combatant.insDie,
     mig_die: combatant.migDie,
     wlp_die: combatant.wlpDie,
+    base_dex_die: combatant.dexDie,
+    base_ins_die: combatant.insDie,
+    base_mig_die: combatant.migDie,
+    base_wlp_die: combatant.wlpDie,
+    statuses: combatant.statuses ?? [],
     defense: combatant.defense,
     magic_defense: combatant.magicDefense,
     is_active: combatant.isActive ?? false,
@@ -535,12 +579,16 @@ async function seedCombatants(battleId: string, seeds: CombatantSeed[]) {
     return seed.abilities.map((ability, index) => ({
       combatant_id: row.id,
       name: ability.name,
+      effect_type: ability.effectType,
+      target_relation: ability.targetRelation,
       check_attribute_a: ability.checkAttributeA,
       check_attribute_b: ability.checkAttributeB,
       check_bonus: ability.checkBonus,
       mp_cost: ability.mpCost,
       damage_bonus: ability.damageBonus,
       damage_type: ability.damageType,
+      heal_amount: ability.healAmount,
+      status_effect: ability.statusEffect,
       sort_order: index,
     }))
   })
@@ -840,7 +888,7 @@ export async function loadCombatActions(
   const { data, error } = await supabase
     .from('combat_actions')
     .select(
-      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, ability_name, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, guard_applied, resource_name, previous_resource, resulting_resource, created_at',
+      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, ability_name, ability_effect_type, status_effect, healing, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, guard_applied, resource_name, previous_resource, resulting_resource, created_at',
     )
     .eq('battle_id', battleId)
     .order('created_at', { ascending: false })
