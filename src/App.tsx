@@ -1,10 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
 import { CombatantCard } from './components/CombatantCard'
+import {
+  joinBattleRoom,
+  loadOrCreateBattle,
+  saveCombatantHp,
+  subscribeToCombatantUpdates,
+} from './lib/battleRepository'
+import type { LoadedBattle } from './lib/battleRepository'
 import type { Combatant } from './types/combat'
 
-const initialCombatants: Combatant[] = [
+const initialCombatants: Omit<Combatant, 'id'>[] = [
   {
-    id: 'hero-aurora',
     name: 'Aurora',
     side: 'heroes',
     hp: 42,
@@ -16,7 +23,6 @@ const initialCombatants: Combatant[] = [
     isActive: true,
   },
   {
-    id: 'hero-cael',
     name: 'Cael',
     side: 'heroes',
     hp: 34,
@@ -27,7 +33,6 @@ const initialCombatants: Combatant[] = [
     maxIp: 6,
   },
   {
-    id: 'enemy-wolf',
     name: 'Lobo de Cinzas',
     side: 'enemies',
     hp: 30,
@@ -38,7 +43,6 @@ const initialCombatants: Combatant[] = [
     maxIp: 1,
   },
   {
-    id: 'enemy-boss',
     name: 'Cavaleiro Rubro',
     side: 'enemies',
     hp: 78,
@@ -50,12 +54,82 @@ const initialCombatants: Combatant[] = [
   },
 ]
 
+type ConnectionStatus = 'connecting' | 'online' | 'error'
+
+function setRoomInUrl(roomCode: string) {
+  const url = new URL(window.location.href)
+  url.searchParams.set('room', roomCode)
+  window.history.replaceState(null, '', url)
+}
+
 export default function App() {
-  // useState é a "memória" desta tela.
-  // Quando combatants muda, o React atualiza a interface.
-  const [combatants, setCombatants] =
-    useState<Combatant[]>(initialCombatants)
-  const [selectedId, setSelectedId] = useState(initialCombatants[0].id)
+  const initializationStarted = useRef(false)
+
+  const [combatants, setCombatants] = useState<Combatant[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [battleId, setBattleId] = useState<string | null>(null)
+  const [battleName, setBattleName] = useState('Carregando batalha…')
+  const [roomCode, setRoomCode] = useState('')
+  const [joinCode, setJoinCode] = useState('')
+  const [connectionStatus, setConnectionStatus] =
+    useState<ConnectionStatus>('connecting')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [savingHp, setSavingHp] = useState(false)
+  const [joiningRoom, setJoiningRoom] = useState(false)
+
+  function applyBattle(battle: LoadedBattle) {
+    setCombatants(battle.combatants)
+    setSelectedId(battle.combatants[0]?.id ?? null)
+    setBattleId(battle.id)
+    setBattleName(battle.name)
+    setRoomCode(battle.roomCode)
+    setJoinCode('')
+    setRoomInUrl(battle.roomCode)
+  }
+
+  useEffect(() => {
+    if (initializationStarted.current) return
+    initializationStarted.current = true
+
+    async function initializeBattle() {
+      try {
+        const requestedRoomCode = new URL(window.location.href).searchParams.get(
+          'room',
+        )
+        const battle = await loadOrCreateBattle(
+          initialCombatants,
+          requestedRoomCode,
+        )
+
+        applyBattle(battle)
+        setConnectionStatus('online')
+      } catch (error) {
+        console.error(error)
+        setConnectionStatus('error')
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : 'Falha desconhecida ao conectar ao Supabase.',
+        )
+      }
+    }
+
+    void initializeBattle()
+  }, [])
+
+  useEffect(() => {
+    if (!battleId || connectionStatus !== 'online') return
+
+    return subscribeToCombatantUpdates(battleId, (updatedCombatant) => {
+      setCombatants((current) =>
+        current.map((combatant) =>
+          combatant.id === updatedCombatant.id
+            ? updatedCombatant
+            : combatant,
+        ),
+      )
+    })
+  }, [battleId, connectionStatus])
 
   const selected = useMemo(
     () => combatants.find((combatant) => combatant.id === selectedId),
@@ -65,35 +139,102 @@ export default function App() {
   const heroes = combatants.filter((combatant) => combatant.side === 'heroes')
   const enemies = combatants.filter((combatant) => combatant.side === 'enemies')
 
-  function changeHp(amount: number) {
-    if (!selected) return
+  async function changeHp(amount: number) {
+    if (!selected || connectionStatus !== 'online' || savingHp) return
 
-    setCombatants((current) =>
-      current.map((combatant) =>
-        combatant.id === selected.id
-          ? {
-              ...combatant,
-              hp: Math.max(
-                0,
-                Math.min(combatant.maxHp, combatant.hp + amount),
-              ),
-            }
-          : combatant,
-      ),
+    const nextHp = Math.max(
+      0,
+      Math.min(selected.maxHp, selected.hp + amount),
     )
+
+    if (nextHp === selected.hp) return
+
+    setSavingHp(true)
+    setErrorMessage(null)
+
+    try {
+      const savedHp = await saveCombatantHp(selected.id, nextHp)
+
+      setCombatants((current) =>
+        current.map((combatant) =>
+          combatant.id === selected.id
+            ? { ...combatant, hp: savedHp }
+            : combatant,
+        ),
+      )
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível salvar o HP no Supabase.',
+      )
+    } finally {
+      setSavingHp(false)
+    }
   }
+
+  async function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (joiningRoom) return
+
+    setJoiningRoom(true)
+    setErrorMessage(null)
+
+    try {
+      const battle = await joinBattleRoom(joinCode, initialCombatants)
+      applyBattle(battle)
+      setConnectionStatus('online')
+    } catch (error) {
+      console.error(error)
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Não foi possível entrar na sala.',
+      )
+    } finally {
+      setJoiningRoom(false)
+    }
+  }
+
+  async function copyRoomLink() {
+    if (!roomCode) return
+
+    const url = new URL(window.location.href)
+    url.searchParams.set('room', roomCode)
+
+    try {
+      await navigator.clipboard.writeText(url.toString())
+    } catch (error) {
+      console.error(error)
+      setErrorMessage('Não foi possível copiar o link automaticamente.')
+    }
+  }
+
+  const connectionLabel =
+    connectionStatus === 'online'
+      ? 'Supabase conectado'
+      : connectionStatus === 'error'
+        ? 'Erro de conexão'
+        : 'Conectando ao Supabase…'
 
   return (
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Protótipo local · v0.1</span>
+          <span className="eyebrow">Sala compartilhada · v0.3</span>
           <h1>Cena de Combate</h1>
         </div>
 
-        <div className="connection-pill">
-          <span className="connection-pill__dot" />
-          Offline por enquanto
+        <div className="topbar__status">
+          {roomCode ? (
+            <div className="room-pill">
+              Sala <strong>{roomCode}</strong>
+            </div>
+          ) : null}
+
+          <div className="connection-pill" data-status={connectionStatus}>
+            <span className="connection-pill__dot" />
+            {connectionLabel}
+          </div>
         </div>
       </header>
 
@@ -131,20 +272,67 @@ export default function App() {
       </section>
 
       <section className="command-panel">
-        <div>
-          <span className="eyebrow">Selecionado</span>
+        <div className="command-panel__info">
+          <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            Estes botões ainda alteram somente o estado deste navegador.
-            Depois, essa mudança virá do servidor e será sincronizada com todos.
+            O HP é persistido no Supabase e alterações da mesma sala são
+            recebidas em tempo real pelos outros navegadores conectados.
           </p>
+
+          <div className="room-controls">
+            <div>
+              <span className="room-controls__label">Sua sala</span>
+              <strong>{roomCode || '—'}</strong>
+              <button
+                type="button"
+                className="room-controls__link"
+                onClick={() => void copyRoomLink()}
+                disabled={!roomCode}
+              >
+                Copiar link
+              </button>
+            </div>
+
+            <form className="room-join" onSubmit={(event) => void handleJoinRoom(event)}>
+              <label htmlFor="room-code">Entrar em outra sala</label>
+              <div>
+                <input
+                  id="room-code"
+                  value={joinCode}
+                  onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                  placeholder="Código da sala"
+                  maxLength={10}
+                  autoComplete="off"
+                />
+                <button
+                  type="submit"
+                  disabled={!joinCode.trim() || joiningRoom}
+                >
+                  {joiningRoom ? 'Entrando…' : 'Entrar'}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {errorMessage ? (
+            <p className="connection-error">{errorMessage}</p>
+          ) : null}
         </div>
 
         <div className="command-panel__buttons">
-          <button type="button" onClick={() => changeHp(-5)}>
+          <button
+            type="button"
+            onClick={() => void changeHp(-5)}
+            disabled={!selected || connectionStatus !== 'online' || savingHp}
+          >
             Dano −5
           </button>
-          <button type="button" onClick={() => changeHp(5)}>
+          <button
+            type="button"
+            onClick={() => void changeHp(5)}
+            disabled={!selected || connectionStatus !== 'online' || savingHp}
+          >
             Cura +5
           </button>
           <button type="button" disabled>
