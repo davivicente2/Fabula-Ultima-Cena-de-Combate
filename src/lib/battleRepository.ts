@@ -10,6 +10,7 @@ import type {
   DamageAffinity,
   DamageType,
   DieSize,
+  InventoryItem,
   ResourceName,
   StatusEffect,
 } from '../types/combat'
@@ -176,6 +177,7 @@ type CombatActionRow = {
     | 'guard'
     | 'resource_adjustment'
     | 'ability'
+    | 'inventory'
   requested_delta: number
   applied_delta: number
   previous_hp: number
@@ -203,7 +205,31 @@ type CombatActionRow = {
   resource_name: 'mp' | 'ip' | null
   previous_resource: number | null
   resulting_resource: number | null
+  inventory_item: InventoryItem | null
+  previous_ip: number | null
+  resulting_ip: number | null
+  statuses_removed: number | null
   created_at: string
+}
+
+type InventoryActionRpcRow = {
+  action_id: string
+  combatant_id: string
+  target_id: string
+  inventory_item: InventoryItem
+  ip_cost: number
+  previous_ip: number
+  resulting_ip: number
+  previous_hp: number
+  resulting_hp: number
+  previous_mp: number
+  resulting_mp: number
+  statuses_removed: number
+  target_statuses: StatusEffect[]
+  acted_round: number
+  next_round: number
+  next_side: CombatSide | null
+  next_revision: number
 }
 
 type CombatAbilityRpcRow = {
@@ -295,6 +321,7 @@ export type CombatAction = {
     | 'guard'
     | 'resource_adjustment'
     | 'ability'
+    | 'inventory'
   requestedDelta: number
   appliedDelta: number
   previousHp: number
@@ -322,6 +349,10 @@ export type CombatAction = {
   resourceName: 'mp' | 'ip' | null
   previousResource: number | null
   resultingResource: number | null
+  inventoryItem: InventoryItem | null
+  previousIp: number | null
+  resultingIp: number | null
+  statusesRemoved: number | null
   createdAt: string
 }
 
@@ -444,6 +475,10 @@ function toCombatAction(row: CombatActionRow): CombatAction {
     resourceName: row.resource_name,
     previousResource: row.previous_resource,
     resultingResource: row.resulting_resource,
+    inventoryItem: row.inventory_item,
+    previousIp: row.previous_ip,
+    resultingIp: row.resulting_ip,
+    statusesRemoved: row.statuses_removed,
     createdAt: row.created_at,
   }
 }
@@ -888,7 +923,7 @@ export async function loadCombatActions(
   const { data, error } = await supabase
     .from('combat_actions')
     .select(
-      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, ability_name, ability_effect_type, status_effect, healing, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, guard_applied, resource_name, previous_resource, resulting_resource, created_at',
+      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, ability_name, ability_effect_type, status_effect, healing, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, guard_applied, resource_name, previous_resource, resulting_resource, inventory_item, previous_ip, resulting_ip, statuses_removed, created_at',
     )
     .eq('battle_id', battleId)
     .order('created_at', { ascending: false })
@@ -972,6 +1007,46 @@ export async function performGuard(
   return {
     battleId: row.battle_id,
     combatantId: row.combatant_id,
+    actedRound: row.acted_round,
+    nextRound: row.next_round,
+    nextSide: row.next_side,
+    nextRevision: row.next_revision,
+  }
+}
+
+export async function performInventoryItem(
+  combatantId: string,
+  targetId: string,
+  item: InventoryItem,
+  expectedRevision: number,
+) {
+  const { data, error } = await supabase
+    .rpc('perform_inventory_item', {
+      p_combatant_id: combatantId,
+      p_target_id: targetId,
+      p_item: item,
+      p_expected_revision: expectedRevision,
+    })
+    .single()
+
+  if (error) throw error
+
+  const row = data as InventoryActionRpcRow
+
+  return {
+    actionId: row.action_id,
+    combatantId: row.combatant_id,
+    targetId: row.target_id,
+    inventoryItem: row.inventory_item,
+    ipCost: row.ip_cost,
+    previousIp: row.previous_ip,
+    resultingIp: row.resulting_ip,
+    previousHp: row.previous_hp,
+    resultingHp: row.resulting_hp,
+    previousMp: row.previous_mp,
+    resultingMp: row.resulting_mp,
+    statusesRemoved: row.statuses_removed,
+    targetStatuses: row.target_statuses,
     actedRound: row.acted_round,
     nextRound: row.next_round,
     nextSide: row.next_side,
