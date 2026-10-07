@@ -451,6 +451,7 @@ export default function App() {
   const [assigningController, setAssigningController] = useState(false)
   const [attacking, setAttacking] = useState(false)
   const [attackTargetId, setAttackTargetId] = useState('')
+  const [actionMode, setActionMode] = useState<'attack' | 'ability'>('attack')
   const [selectedAbilityId, setSelectedAbilityId] = useState('')
   const [abilityTargetId, setAbilityTargetId] = useState('')
   const [changingTurnState, setChangingTurnState] = useState(false)
@@ -657,6 +658,10 @@ export default function App() {
   const abilityTarget = abilityTargets.find(
     (combatant) => combatant.id === abilityTargetId,
   )
+  const activeTarget =
+    actionMode === 'attack' ? attackTarget : abilityTarget
+  const activeTargets =
+    actionMode === 'attack' ? attackTargets : abilityTargets
   const selectedHasActed =
     Boolean(selected) &&
     turnState.started &&
@@ -706,6 +711,23 @@ export default function App() {
       setSelectedAbilityId(selected.abilities[0]?.id ?? '')
     }
   }, [selected, selectedAbilityId])
+
+
+  useEffect(() => {
+    if (!selected) return
+
+    if (actionMode === 'attack' && !selectedAttack && selected.abilities.length > 0) {
+      setActionMode('ability')
+    }
+
+    if (
+      actionMode === 'ability' &&
+      selected.abilities.length === 0 &&
+      selectedAttack
+    ) {
+      setActionMode('attack')
+    }
+  }, [selected, selectedAttack, actionMode])
 
   useEffect(() => {
     if (!selectedAbility) {
@@ -1423,145 +1445,167 @@ export default function App() {
 
           {selected ? (
             <div className="attack-panel">
-              <div className="attack-panel__summary">
-                <span className="attack-panel__label">
-                  {selectedHasActed
-                    ? 'Já agiu nesta rodada'
-                    : canActSelected
-                      ? 'Pode agir agora'
-                      : 'Aguardando turno'}
-                </span>
-                {selected.guardStartedRound !== null &&
-                selected.guardStartedRound !== undefined ? (
-                  <strong>Guard ativo · Resistência temporária</strong>
-                ) : null}
-                {selectedAttack ? (
-                  <>
-                    <strong>{selectedAttack.name}</strong>
-                    <small>
-                      {selectedAttack.accuracyAttributeA.toUpperCase()} d
-                      {attributeDie(
-                        selected,
-                        selectedAttack.accuracyAttributeA,
-                      )}{' '}
-                      + {selectedAttack.accuracyAttributeB.toUpperCase()} d
-                      {attributeDie(
-                        selected,
-                        selectedAttack.accuracyAttributeB,
-                      )}{' '}
-                      {selectedAttack.accuracyBonus >= 0 ? '+' : ''}
-                      {selectedAttack.accuracyBonus} · HR +
-                      {selectedAttack.damageBonus} ·{' '}
-                      {damageTypeLabel(selectedAttack.damageType)}
-                    </small>
-                  </>
-                ) : (
-                  <strong>Sem ataque configurado.</strong>
-                )}
+              <div className="action-builder">
+                <div className="action-builder__header">
+                  <div>
+                    <span className="attack-panel__label">
+                      {selectedHasActed
+                        ? 'Já agiu nesta rodada'
+                        : canActSelected
+                          ? 'Pode agir agora'
+                          : 'Aguardando turno'}
+                    </span>
+                    {selected.guardStartedRound !== null &&
+                    selected.guardStartedRound !== undefined ? (
+                      <strong>Guard ativo · Resistência temporária</strong>
+                    ) : null}
+                  </div>
 
-                {selected && selected.abilities.length > 0 ? (
-                  <label className="ability-picker">
-                    Habilidade
-                    <select
-                      value={selectedAbility?.id ?? ''}
-                      onChange={(event) =>
-                        setSelectedAbilityId(event.target.value)
-                      }
-                      disabled={!canActSelected || combatActionBusy}
+                  <div
+                    className="action-mode"
+                    aria-label="Tipo de ação ofensiva"
+                  >
+                    <button
+                      type="button"
+                      className={actionMode === 'attack' ? 'is-active' : ''}
+                      onClick={() => setActionMode('attack')}
+                      disabled={!selectedAttack || combatActionBusy}
                     >
-                      {selected.abilities.map((ability) => (
-                        <option key={ability.id} value={ability.id}>
-                          {ability.name} · {ability.mpCost} MP
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
+                      Ataque
+                    </button>
+                    <button
+                      type="button"
+                      className={actionMode === 'ability' ? 'is-active' : ''}
+                      onClick={() => setActionMode('ability')}
+                      disabled={
+                        selected.abilities.length === 0 || combatActionBusy
+                      }
+                    >
+                      Habilidade
+                    </button>
+                  </div>
+                </div>
 
-                {selectedAbility ? (
-                  <small>
-                    {selectedAbility.effectType === 'heal' ? (
+                {actionMode === 'attack' ? (
+                  <div className="action-builder__details">
+                    {selectedAttack ? (
                       <>
-                        Cura {selectedAbility.healAmount} HP ·{' '}
-                        {selectedAbility.mpCost} MP
+                        <strong>{selectedAttack.name}</strong>
+                        <small>
+                          {selectedAttack.accuracyAttributeA.toUpperCase()} d
+                          {attributeDie(
+                            selected,
+                            selectedAttack.accuracyAttributeA,
+                          )}{' '}
+                          + {selectedAttack.accuracyAttributeB.toUpperCase()} d
+                          {attributeDie(
+                            selected,
+                            selectedAttack.accuracyAttributeB,
+                          )}{' '}
+                          {selectedAttack.accuracyBonus >= 0 ? '+' : ''}
+                          {selectedAttack.accuracyBonus} · HR +
+                          {selectedAttack.damageBonus} ·{' '}
+                          {damageTypeLabel(selectedAttack.damageType)}
+                        </small>
                       </>
                     ) : (
-                      <>
-                        {selectedAbility.checkAttributeA.toUpperCase()} d
-                        {attributeDie(
-                          selected,
-                          selectedAbility.checkAttributeA,
-                        )}{' '}
-                        + {selectedAbility.checkAttributeB.toUpperCase()} d
-                        {attributeDie(
-                          selected,
-                          selectedAbility.checkAttributeB,
-                        )}{' '}
-                        {selectedAbility.checkBonus >= 0 ? '+' : ''}
-                        {selectedAbility.checkBonus} · {selectedAbility.mpCost} MP
-                        {selectedAbility.effectType === 'damage' ? (
+                      <strong>Sem ataque configurado.</strong>
+                    )}
+                  </div>
+                ) : (
+                  <div className="action-builder__details">
+                    {selected.abilities.length > 0 ? (
+                      <label className="ability-picker">
+                        Escolher habilidade
+                        <select
+                          value={selectedAbility?.id ?? ''}
+                          onChange={(event) =>
+                            setSelectedAbilityId(event.target.value)
+                          }
+                          disabled={!canActSelected || combatActionBusy}
+                        >
+                          {selected.abilities.map((ability) => (
+                            <option key={ability.id} value={ability.id}>
+                              {ability.name} · {ability.mpCost} MP
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <strong>Sem habilidades configuradas.</strong>
+                    )}
+
+                    {selectedAbility ? (
+                      <small>
+                        {selectedAbility.effectType === 'heal' ? (
                           <>
-                            {' '}· HR +{selectedAbility.damageBonus} ·{' '}
-                            {damageTypeLabel(selectedAbility.damageType)} vs MDEF
+                            Cura {selectedAbility.healAmount} HP ·{' '}
+                            {selectedAbility.mpCost} MP
                           </>
                         ) : (
                           <>
-                            {' '}· aplica{' '}
-                            {statusLabel(selectedAbility.statusEffect)} vs MDEF
+                            {selectedAbility.checkAttributeA.toUpperCase()} d
+                            {attributeDie(
+                              selected,
+                              selectedAbility.checkAttributeA,
+                            )}{' '}
+                            + {selectedAbility.checkAttributeB.toUpperCase()} d
+                            {attributeDie(
+                              selected,
+                              selectedAbility.checkAttributeB,
+                            )}{' '}
+                            {selectedAbility.checkBonus >= 0 ? '+' : ''}
+                            {selectedAbility.checkBonus} ·{' '}
+                            {selectedAbility.mpCost} MP
+                            {selectedAbility.effectType === 'damage' ? (
+                              <>
+                                {' '}· HR +{selectedAbility.damageBonus} ·{' '}
+                                {damageTypeLabel(selectedAbility.damageType)} vs
+                                MDEF
+                              </>
+                            ) : (
+                              <>
+                                {' '}· aplica{' '}
+                                {statusLabel(selectedAbility.statusEffect)} vs
+                                MDEF
+                              </>
+                            )}
                           </>
                         )}
-                      </>
-                    )}
-                  </small>
-                ) : null}
-              </div>
+                      </small>
+                    ) : null}
+                  </div>
+                )}
 
-              <label>
-                Alvo
-                <select
-                  value={attackTargetId}
-                  onChange={(event) => setAttackTargetId(event.target.value)}
-                  disabled={!canActSelected || combatActionBusy}
-                >
-                  {attackTargets.map((target) => (
-                    <option key={target.id} value={target.id}>
-                      {target.name} · DEF {target.defense} · MDEF{' '}
-                      {target.magicDefense}
-                      {selectedAttack
-                        ? ` · ${affinityLabel(
-                            effectiveAffinity(
-                              target.affinities[selectedAttack.damageType],
-                              target.guardStartedRound !== null &&
-                                target.guardStartedRound !== undefined,
-                            ),
-                          )}${target.guardStartedRound !== null &&
-                          target.guardStartedRound !== undefined
-                            ? ' (Guard)'
-                            : ''}`
-                        : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-
-              {selectedAbility ? (
-                <label>
-                  Alvo da habilidade
+                <label className="action-target">
+                  Alvo
                   <select
-                    value={abilityTargetId}
-                    onChange={(event) => setAbilityTargetId(event.target.value)}
-                    disabled={!canActSelected || combatActionBusy}
+                    value={
+                      actionMode === 'attack' ? attackTargetId : abilityTargetId
+                    }
+                    onChange={(event) => {
+                      if (actionMode === 'attack') {
+                        setAttackTargetId(event.target.value)
+                      } else {
+                        setAbilityTargetId(event.target.value)
+                      }
+                    }}
+                    disabled={
+                      !canActSelected ||
+                      combatActionBusy ||
+                      activeTargets.length === 0
+                    }
                   >
-                    {abilityTargets.map((target) => (
+                    {activeTargets.map((target) => (
                       <option key={target.id} value={target.id}>
-                        {target.name} · HP {target.hp}/{target.maxHp} · MDEF{' '}
-                        {target.magicDefense}
+                        {actionMode === 'attack'
+                          ? `${target.name} · DEF ${target.defense} · MDEF ${target.magicDefense}`
+                          : `${target.name} · HP ${target.hp}/${target.maxHp} · MDEF ${target.magicDefense}`}
                       </option>
                     ))}
                   </select>
                 </label>
-              ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -1678,18 +1722,32 @@ export default function App() {
             <span className="command-actions__label">Ações de combate</span>
 
             <button
+              className="command-action--primary"
               type="button"
-              onClick={() => void handleAttack()}
+              onClick={() =>
+                void (actionMode === 'attack' ? handleAttack() : handleAbility())
+              }
               disabled={
                 !selected ||
-                !selectedAttack ||
-                !attackTarget ||
+                !activeTarget ||
                 !canActSelected ||
                 connectionStatus !== 'online' ||
-                combatActionBusy
+                combatActionBusy ||
+                (actionMode === 'attack'
+                  ? !selectedAttack
+                  : !selectedAbility ||
+                    selected.mp < selectedAbility.mpCost)
               }
             >
-              {attacking ? 'Atacando…' : 'Atacar'}
+              {actionMode === 'attack'
+                ? attacking
+                  ? 'Atacando…'
+                  : selectedAttack?.name ?? 'Atacar'
+                : usingAbility
+                  ? 'Usando…'
+                  : selectedAbility
+                    ? `${selectedAbility.name} · ${selectedAbility.mpCost} MP`
+                    : 'Habilidade'}
             </button>
 
             <button
@@ -1706,26 +1764,6 @@ export default function App() {
               disabled={!canActSelected || combatActionBusy}
             >
               {endingTurn ? 'Encerrando…' : 'Encerrar turno'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void handleAbility()}
-              disabled={
-                !selected ||
-                !selectedAbility ||
-                !abilityTarget ||
-                !canActSelected ||
-                selected.mp < selectedAbility.mpCost ||
-                connectionStatus !== 'online' ||
-                combatActionBusy
-              }
-            >
-              {usingAbility
-                ? 'Usando…'
-                : selectedAbility
-                  ? `${selectedAbility.name} · ${selectedAbility.mpCost} MP`
-                  : 'Habilidade'}
             </button>
           </div>
 
