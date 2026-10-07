@@ -1310,111 +1310,130 @@ export default function App() {
           ) : null}
         </div>
 
-        <div className="command-panel__buttons">
-          <button
-            type="button"
-            onClick={() => void changeHp(-5)}
-            disabled={
-              !selected ||
-              !canControlSelected ||
-              connectionStatus !== 'online' ||
-              savingHp
-            }
-          >
-            Dano −5
-          </button>
-          <button
-            type="button"
-            onClick={() => void changeHp(5)}
-            disabled={
-              !selected ||
-              !canControlSelected ||
-              connectionStatus !== 'online' ||
-              savingHp
-            }
-          >
-            Cura +5
-          </button>
-          <button
-            type="button"
-            onClick={() => void changeResource('MP', -5)}
-            disabled={
-              !selected ||
-              !canControlSelected ||
-              connectionStatus !== 'online' ||
-              adjustingResource !== null
-            }
-          >
-            MP −5
-          </button>
-          <button
-            type="button"
-            onClick={() => void changeResource('MP', 5)}
-            disabled={
-              !selected ||
-              playerIdentity?.role !== 'host' ||
-              connectionStatus !== 'online' ||
-              adjustingResource !== null
-            }
-          >
-            MP +5
-          </button>
-          <button
-            type="button"
-            onClick={() => void changeResource('IP', -1)}
-            disabled={
-              !selected ||
-              !canControlSelected ||
-              connectionStatus !== 'online' ||
-              adjustingResource !== null
-            }
-          >
-            IP −1
-          </button>
-          <button
-            type="button"
-            onClick={() => void changeResource('IP', 1)}
-            disabled={
-              !selected ||
-              playerIdentity?.role !== 'host' ||
-              connectionStatus !== 'online' ||
-              adjustingResource !== null
-            }
-          >
-            IP +1
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleAttack()}
-            disabled={
-              !selected ||
-              !selectedAttack ||
-              !attackTarget ||
-              !canActSelected ||
-              connectionStatus !== 'online' ||
-              attacking
-            }
-          >
-            {attacking ? 'Atacando…' : 'Atacar'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleGuard()}
-            disabled={!canActSelected || guarding}
-          >
-            {guarding ? 'Defendendo…' : 'Guard'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleEndTurn()}
-            disabled={!canActSelected || endingTurn}
-          >
-            {endingTurn ? 'Encerrando…' : 'Encerrar turno'}
-          </button>
-          <button type="button" disabled>
-            Habilidade
-          </button>
-        </div>
+        <aside className="command-panel__actions">
+          <div className="command-actions__group">
+            <span className="command-actions__label">Ações de combate</span>
+
+            <button
+              type="button"
+              onClick={() => void handleAttack()}
+              disabled={
+                !selected ||
+                !selectedAttack ||
+                !attackTarget ||
+                !canActSelected ||
+                connectionStatus !== 'online' ||
+                attacking
+              }
+            >
+              {attacking ? 'Atacando…' : 'Atacar'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleGuard()}
+              disabled={!canActSelected || guarding}
+            >
+              {guarding ? 'Defendendo…' : 'Guard'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleEndTurn()}
+              disabled={!canActSelected || endingTurn}
+            >
+              {endingTurn ? 'Encerrando…' : 'Encerrar turno'}
+            </button>
+
+            <button type="button" disabled>
+              Habilidade
+            </button>
+          </div>
+
+          <div className="command-actions__group command-actions__group--debug">
+            <span className="command-actions__label">Debug / GM</span>
+
+            <div className="command-actions__grid">
+              <button
+                type="button"
+                onClick={() => void changeHp(-5)}
+                disabled={
+                  !selected ||
+                  !canControlSelected ||
+                  connectionStatus !== 'online' ||
+                  savingHp
+                }
+              >
+                HP −5
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void changeHp(5)}
+                disabled={
+                  !selected ||
+                  !canControlSelected ||
+                  connectionStatus !== 'online' ||
+                  savingHp
+                }
+              >
+                HP +5
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void changeResource('MP', -5)}
+                disabled={
+                  !selected ||
+                  !canControlSelected ||
+                  connectionStatus !== 'online' ||
+                  adjustingResource !== null
+                }
+              >
+                MP −5
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void changeResource('MP', 5)}
+                disabled={
+                  !selected ||
+                  playerIdentity?.role !== 'host' ||
+                  connectionStatus !== 'online' ||
+                  adjustingResource !== null
+                }
+              >
+                MP +5
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void changeResource('IP', -1)}
+                disabled={
+                  !selected ||
+                  !canControlSelected ||
+                  connectionStatus !== 'online' ||
+                  adjustingResource !== null
+                }
+              >
+                IP −1
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void changeResource('IP', 1)}
+                disabled={
+                  !selected ||
+                  playerIdentity?.role !== 'host' ||
+                  connectionStatus !== 'online' ||
+                  adjustingResource !== null
+                }
+              >
+                IP +1
+              </button>
+            </div>
+          </div>
+        </aside>
       </section>
     </main>
   )
