@@ -86,6 +86,14 @@ h2 {
   background: #e6aa55;
 }
 
+.connection-pill[data-status="online"] .connection-pill__dot {
+  background: #79c995;
+}
+
+.connection-pill[data-status="error"] .connection-pill__dot {
+  background: #dc737d;
+}
+
 .battlefield {
   position: relative;
   display: grid;
@@ -260,6 +268,10 @@ h2 {
   margin-top: 6px;
   color: #9da0b2;
   line-height: 1.45;
+}
+
+.command-panel .connection-error {
+  color: #e58a93;
 }
 
 .command-panel__buttons {
