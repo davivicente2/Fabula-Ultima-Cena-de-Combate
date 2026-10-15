@@ -101,3 +101,31 @@ export async function addCharacterToBattle(
     character_id: string
   }
 }
+
+
+export function subscribeToCharacterLibrary(
+  roomId: string,
+  onChange: (characters: CharacterRecord[]) => void,
+) {
+  const refresh = () => {
+    void listCharacters(roomId).then(onChange)
+  }
+
+  const channel = supabase
+    .channel(`characters-${roomId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'characters',
+        filter: `room_id=eq.${roomId}`,
+      },
+      refresh,
+    )
+    .subscribe()
+
+  return () => {
+    void supabase.removeChannel(channel)
+  }
+}
