@@ -423,9 +423,7 @@ begin
         v_combatant_id,
         v_affinity.key,
         v_affinity.value
-      )
-      on conflict (combatant_id, damage_type)
-      do update set affinity = excluded.affinity;
+      );
     end if;
   end loop;
 
