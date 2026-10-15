@@ -37,6 +37,7 @@ export type CombatantSeed = Omit<
 
 type CombatantRow = {
   id: string
+  character_id: string | null
   name: string
   side: CombatSide
   hp: number
@@ -381,6 +382,7 @@ function toCombatant(
 ): Combatant {
   return {
     id: row.id,
+    characterId: row.character_id,
     name: row.name,
     side: row.side,
     hp: row.hp,
@@ -487,7 +489,7 @@ async function loadCombatants(battleId: string) {
   const { data, error } = await supabase
     .from('combatants')
     .select(
-      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, base_dex_die, base_ins_die, base_mig_die, base_wlp_die, statuses, defense, magic_defense, last_acted_round, guard_started_round',
+      'id, character_id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, base_dex_die, base_ins_die, base_mig_die, base_wlp_die, statuses, defense, magic_defense, last_acted_round, guard_started_round',
     )
     .eq('battle_id', battleId)
     .order('sort_order', { ascending: true })
