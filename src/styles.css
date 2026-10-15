@@ -1480,3 +1480,17 @@ h2 {
     flex: 1;
   }
 }
+
+
+.imported-spell-description {
+  max-width: 720px;
+  margin: 3px 0 0;
+  padding: 8px 10px;
+  border-left: 2px solid rgba(215, 197, 255, 0.36);
+  border-radius: 0 8px 8px 0;
+  color: #aeb1bf;
+  background: rgba(215, 197, 255, 0.045);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
