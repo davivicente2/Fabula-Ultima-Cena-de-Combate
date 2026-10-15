@@ -626,3 +626,86 @@ revoke all on function public.perform_manual_combatant_ability(
 grant execute on function public.perform_manual_combatant_ability(
   uuid, uuid, bigint
 ) to authenticated;
+
+
+-- Keep the old structured resolver internal. The public entry point now routes
+-- manual imported spells safely instead of letting an old client treat them as
+-- the previous catch-all damage branch.
+alter function public.perform_combatant_ability(uuid, uuid, bigint)
+  rename to perform_structured_combatant_ability_internal;
+
+revoke all on function public.perform_structured_combatant_ability_internal(
+  uuid, uuid, bigint
+) from public, anon, authenticated;
+
+create or replace function public.perform_combatant_ability(
+  p_ability_id uuid,
+  p_target_id uuid,
+  p_expected_revision bigint
+)
+returns table (
+  action_id uuid,
+  caster_id uuid,
+  target_id uuid,
+  ability_name text,
+  roll_a integer,
+  roll_b integer,
+  check_total integer,
+  high_roll integer,
+  target_magic_defense integer,
+  is_hit boolean,
+  is_critical boolean,
+  is_fumble boolean,
+  damage integer,
+  damage_type text,
+  damage_affinity text,
+  previous_hp integer,
+  resulting_hp integer,
+  previous_mp integer,
+  resulting_mp integer,
+  acted_round integer,
+  next_round integer,
+  next_side text,
+  next_revision bigint
+)
+language plpgsql
+security definer
+set search_path = ''
+as $ability_router$
+declare
+  v_effect_type text;
+begin
+  select abilities.effect_type
+  into v_effect_type
+  from public.combatant_abilities as abilities
+  where abilities.id = p_ability_id;
+
+  if v_effect_type is null then
+    raise exception 'Habilidade não encontrada.';
+  end if;
+
+  if v_effect_type = 'manual' then
+    return query
+    select *
+    from public.perform_manual_combatant_ability(
+      p_ability_id,
+      p_target_id,
+      p_expected_revision
+    );
+    return;
+  end if;
+
+  return query
+  select *
+  from public.perform_structured_combatant_ability_internal(
+    p_ability_id,
+    p_target_id,
+    p_expected_revision
+  );
+end;
+$ability_router$;
+
+revoke all on function public.perform_combatant_ability(uuid, uuid, bigint)
+  from public, anon;
+grant execute on function public.perform_combatant_ability(uuid, uuid, bigint)
+  to authenticated;
