@@ -40,7 +40,7 @@ export type CombatAttack = {
   damageType: DamageType
 }
 
-export type AbilityEffectType = 'damage' | 'heal' | 'status'
+export type AbilityEffectType = 'damage' | 'heal' | 'status' | 'manual'
 export type AbilityTargetRelation = 'enemy' | 'ally'
 
 export type CombatAbility = {
@@ -56,6 +56,9 @@ export type CombatAbility = {
   damageType: DamageType | null
   healAmount: number
   statusEffect: StatusEffect | null
+  description?: string | null
+  source?: 'native' | 'fultimator'
+  maxTargets?: number
 }
 
 export type Combatant = {
