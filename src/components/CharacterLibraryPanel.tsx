@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { CharacterSheetView } from './CharacterSheetView'
 import {
   addCharacterToBattle,
   createCharacterRecord,
@@ -67,6 +68,7 @@ export function CharacterLibraryPanel({
   const [addingId, setAddingId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [openCharacter, setOpenCharacter] = useState<CharacterRecord | null>(null)
 
   const activeCharacterIds = useMemo(
     () =>
@@ -245,21 +247,30 @@ export function CharacterLibraryPanel({
                     </span>
                   </div>
 
-                  {active ? (
-                    <span className="character-library__active">
-                      Na cena
-                    </span>
-                  ) : isHost ? (
+                  <div className="character-library__actions">
                     <button
                       type="button"
-                      onClick={() => void handleAdd(character)}
-                      disabled={!battleId || addingId !== null}
+                      onClick={() => setOpenCharacter(character)}
                     >
-                      {addingId === character.id
-                        ? 'Adicionando…'
-                        : 'Adicionar à cena'}
+                      Abrir ficha
                     </button>
-                  ) : null}
+
+                    {active ? (
+                      <span className="character-library__active">
+                        Na cena
+                      </span>
+                    ) : isHost ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleAdd(character)}
+                        disabled={!battleId || addingId !== null}
+                      >
+                        {addingId === character.id
+                          ? 'Adicionando…'
+                          : 'Adicionar à cena'}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="character-library__stats">
@@ -318,6 +329,13 @@ export function CharacterLibraryPanel({
       ) : null}
       {error ? (
         <p className="character-library__error">{error}</p>
+      ) : null}
+
+      {openCharacter ? (
+        <CharacterSheetView
+          character={openCharacter}
+          onClose={() => setOpenCharacter(null)}
+        />
       ) : null}
     </section>
   )
