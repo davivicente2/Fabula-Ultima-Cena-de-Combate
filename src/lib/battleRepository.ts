@@ -916,6 +916,10 @@ export async function adjustCombatantResource(
   }
 }
 
+export async function loadBattleCombatants(battleId: string) {
+  return loadCombatants(battleId)
+}
+
 export async function loadCombatActions(
   battleId: string,
   limit = 20,
@@ -1181,6 +1185,42 @@ export function subscribeToBattleTurnState(
       },
       (payload) => {
         onUpdate(toBattleTurnState(payload.new as BattleRow))
+      },
+    )
+    .subscribe()
+
+  return () => {
+    void supabase.removeChannel(channel)
+  }
+}
+
+export function subscribeToCombatantListChanges(
+  battleId: string,
+  onChange: (combatants: Combatant[]) => void,
+) {
+  const channel = supabase
+    .channel(`battle-roster-${battleId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'combatants',
+        filter: `battle_id=eq.${battleId}`,
+      },
+      () => {
+        void loadCombatants(battleId).then(onChange)
+      },
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'combatants',
+      },
+      () => {
+        void loadCombatants(battleId).then(onChange)
       },
     )
     .subscribe()
