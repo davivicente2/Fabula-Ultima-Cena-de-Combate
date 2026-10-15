@@ -37,6 +37,7 @@ export type CombatantSeed = Omit<
 
 type CombatantRow = {
   id: string
+  character_id: string | null
   name: string
   side: CombatSide
   hp: number
@@ -381,6 +382,7 @@ function toCombatant(
 ): Combatant {
   return {
     id: row.id,
+    characterId: row.character_id,
     name: row.name,
     side: row.side,
     hp: row.hp,
@@ -487,7 +489,7 @@ async function loadCombatants(battleId: string) {
   const { data, error } = await supabase
     .from('combatants')
     .select(
-      'id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, base_dex_die, base_ins_die, base_mig_die, base_wlp_die, statuses, defense, magic_defense, last_acted_round, guard_started_round',
+      'id, character_id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, base_dex_die, base_ins_die, base_mig_die, base_wlp_die, statuses, defense, magic_defense, last_acted_round, guard_started_round',
     )
     .eq('battle_id', battleId)
     .order('sort_order', { ascending: true })
@@ -916,6 +918,10 @@ export async function adjustCombatantResource(
   }
 }
 
+export async function loadBattleCombatants(battleId: string) {
+  return loadCombatants(battleId)
+}
+
 export async function loadCombatActions(
   battleId: string,
   limit = 20,
@@ -1181,6 +1187,42 @@ export function subscribeToBattleTurnState(
       },
       (payload) => {
         onUpdate(toBattleTurnState(payload.new as BattleRow))
+      },
+    )
+    .subscribe()
+
+  return () => {
+    void supabase.removeChannel(channel)
+  }
+}
+
+export function subscribeToCombatantListChanges(
+  battleId: string,
+  onChange: (combatants: Combatant[]) => void,
+) {
+  const channel = supabase
+    .channel(`battle-roster-${battleId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'combatants',
+        filter: `battle_id=eq.${battleId}`,
+      },
+      () => {
+        void loadCombatants(battleId).then(onChange)
+      },
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'combatants',
+      },
+      () => {
+        void loadCombatants(battleId).then(onChange)
       },
     )
     .subscribe()
