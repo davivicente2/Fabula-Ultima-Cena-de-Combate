@@ -440,3 +440,18 @@ revoke all on function public.add_character_to_battle(uuid, uuid)
   from public, anon;
 grant execute on function public.add_character_to_battle(uuid, uuid)
   to authenticated;
+
+
+do $publication$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'characters'
+  ) then
+    execute 'alter publication supabase_realtime add table public.characters';
+  end if;
+end
+$publication$;
