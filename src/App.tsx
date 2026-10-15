@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { CharacterLibraryPanel } from './components/CharacterLibraryPanel'
 import { CombatantCard } from './components/CombatantCard'
 import {
   adjustCombatantResource,
@@ -19,6 +20,7 @@ import {
   stopBattleTurns,
   subscribeToBattleTurnState,
   subscribeToCombatActions,
+  subscribeToCombatantListChanges,
   subscribeToCombatantUpdates,
 } from './lib/battleRepository'
 import type {
@@ -615,6 +617,16 @@ export default function App() {
     })
   }, [battleId, connectionStatus])
 
+
+  useEffect(() => {
+    if (!battleId || connectionStatus !== 'online') return
+
+    return subscribeToCombatantListChanges(
+      battleId,
+      applyCombatantRoster,
+    )
+  }, [battleId, connectionStatus])
+
   useEffect(() => {
     if (!battleId || connectionStatus !== 'online') {
       setCombatActions([])
@@ -672,6 +684,20 @@ export default function App() {
       setOnlinePlayers,
     )
   }, [roomId, connectionStatus, playerIdentity])
+
+  function applyCombatantRoster(nextCombatants: Combatant[]) {
+    setCombatants(nextCombatants)
+    setSelectedId((current) => {
+      if (
+        current &&
+        nextCombatants.some((combatant) => combatant.id === current)
+      ) {
+        return current
+      }
+
+      return nextCombatants[0]?.id ?? null
+    })
+  }
 
   const selected = useMemo(
     () => combatants.find((combatant) => combatant.id === selectedId),
@@ -1400,8 +1426,8 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Inventory autoritativo · v0.15</span>
-          <h1>Cena de Combate</h1>
+          <span className="eyebrow">Ficha persistente · v0.16</span>
+          <h1>Fabula Ultima · Sala</h1>
         </div>
 
         <div className="topbar__status">
@@ -1474,8 +1500,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            A ação Inventory agora gasta IP no backend e aplica Remedy,
-            Elixir ou Tonic no mesmo fluxo autoritativo de turno.
+            A ficha agora pode existir na biblioteca da sala antes de entrar
+            em combate. O primeiro importador aceita personagens exportados
+            pelo Fultimator.
           </p>
 
           <div className="player-session">
@@ -1538,6 +1565,15 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          <CharacterLibraryPanel
+            roomId={roomId}
+            battleId={battleId}
+            currentUserId={playerIdentity?.userId ?? null}
+            isHost={playerIdentity?.role === 'host'}
+            combatants={combatants}
+            onCombatantsChange={applyCombatantRoster}
+          />
 
           <div className="turn-panel">
             <div>
