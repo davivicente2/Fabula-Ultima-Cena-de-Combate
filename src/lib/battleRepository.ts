@@ -90,6 +90,9 @@ type CombatAbilityRow = {
   damage_type: DamageType | null
   heal_amount: number
   status_effect: StatusEffect | null
+  description: string | null
+  source: 'native' | 'fultimator'
+  max_targets: number
   sort_order: number
 }
 
@@ -426,6 +429,9 @@ function toCombatAbility(row: CombatAbilityRow): CombatAbility {
     damageType: row.damage_type,
     healAmount: row.heal_amount,
     statusEffect: row.status_effect,
+    description: row.description,
+    source: row.source,
+    maxTargets: row.max_targets,
   }
 }
 
@@ -513,7 +519,7 @@ async function loadCombatants(battleId: string) {
       supabase
         .from('combatant_abilities')
         .select(
-          'id, combatant_id, name, effect_type, target_relation, check_attribute_a, check_attribute_b, check_bonus, mp_cost, damage_bonus, damage_type, heal_amount, status_effect, sort_order',
+          'id, combatant_id, name, effect_type, target_relation, check_attribute_a, check_attribute_b, check_bonus, mp_cost, damage_bonus, damage_type, heal_amount, status_effect, description, source, max_targets, sort_order',
         )
         .in('combatant_id', combatantIds)
         .order('sort_order', { ascending: true }),
@@ -626,6 +632,9 @@ async function seedCombatants(battleId: string, seeds: CombatantSeed[]) {
       damage_type: ability.damageType,
       heal_amount: ability.healAmount,
       status_effect: ability.statusEffect,
+      description: ability.description ?? null,
+      source: ability.source ?? 'native',
+      max_targets: ability.maxTargets ?? 1,
       sort_order: index,
     }))
   })
@@ -1053,6 +1062,50 @@ export async function performInventoryItem(
     resultingMp: row.resulting_mp,
     statusesRemoved: row.statuses_removed,
     targetStatuses: row.target_statuses,
+    actedRound: row.acted_round,
+    nextRound: row.next_round,
+    nextSide: row.next_side,
+    nextRevision: row.next_revision,
+  }
+}
+
+export async function performManualCombatantAbility(
+  abilityId: string,
+  targetId: string,
+  expectedRevision: number,
+) {
+  const { data, error } = await supabase
+    .rpc('perform_manual_combatant_ability', {
+      p_ability_id: abilityId,
+      p_target_id: targetId,
+      p_expected_revision: expectedRevision,
+    })
+    .single()
+
+  if (error) throw error
+
+  const row = data as CombatAbilityRpcRow
+
+  return {
+    actionId: row.action_id,
+    casterId: row.caster_id,
+    targetId: row.target_id,
+    abilityName: row.ability_name,
+    rollA: row.roll_a,
+    rollB: row.roll_b,
+    checkTotal: row.check_total,
+    highRoll: row.high_roll,
+    targetMagicDefense: row.target_magic_defense,
+    isHit: row.is_hit,
+    isCritical: row.is_critical,
+    isFumble: row.is_fumble,
+    damage: row.damage,
+    damageType: row.damage_type,
+    damageAffinity: row.damage_affinity,
+    previousHp: row.previous_hp,
+    resultingHp: row.resulting_hp,
+    previousMp: row.previous_mp,
+    resultingMp: row.resulting_mp,
     actedRound: row.acted_round,
     nextRound: row.next_round,
     nextSide: row.next_side,
