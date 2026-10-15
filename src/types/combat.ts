@@ -60,6 +60,7 @@ export type CombatAbility = {
 
 export type Combatant = {
   id: string
+  characterId?: string | null
   name: string
   side: CombatSide
   hp: number
