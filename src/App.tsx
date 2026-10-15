@@ -12,6 +12,7 @@ import {
   loadCurrentPlayerIdentity,
   loadOrCreateBattle,
   performCombatantAbility,
+  performManualCombatantAbility,
   performCombatantAttack,
   performGuard,
   performInventoryItem,
@@ -369,6 +370,19 @@ function combatActionText(action: CombatAction) {
       action.previousResource !== null && action.resultingResource !== null
         ? action.previousResource - action.resultingResource
         : 0
+
+    if (action.abilityEffectType === 'manual') {
+      if (action.isFumble) {
+        return `${actor} · ${caster} conjurou ${ability} (${mpSpent} MP) em ${target}: falha crítica.`
+      }
+
+      if (!action.isHit) {
+        return `${actor} · ${caster} conjurou ${ability} (${mpSpent} MP) em ${target}: Magic Check falhou.`
+      }
+
+      const critical = action.isCritical ? ' Crítico!' : ''
+      return `${actor} · ${caster} conjurou ${ability} (${mpSpent} MP) em ${target}: Magic Check bem-sucedido.${critical} Aplique o efeito descrito na ficha.`
+    }
 
     if (action.abilityEffectType === 'heal') {
       return `${actor} · ${caster} usou ${ability} (${mpSpent} MP) em ${target}: recuperou ${action.healing ?? 0} HP.`
@@ -1182,11 +1196,18 @@ export default function App() {
     setErrorMessage(null)
 
     try {
-      const result = await performCombatantAbility(
-        selectedAbility.id,
-        abilityTarget.id,
-        turnState.turnRevision,
-      )
+      const result =
+        selectedAbility.effectType === 'manual'
+          ? await performManualCombatantAbility(
+              selectedAbility.id,
+              abilityTarget.id,
+              turnState.turnRevision,
+            )
+          : await performCombatantAbility(
+              selectedAbility.id,
+              abilityTarget.id,
+              turnState.turnRevision,
+            )
 
       setCombatants((current) =>
         current.map((combatant) => {
@@ -1426,7 +1447,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Ficha persistente · v0.16</span>
+          <span className="eyebrow">Spells importadas · v0.17</span>
           <h1>Fabula Ultima · Sala</h1>
         </div>
 
@@ -1500,9 +1521,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            A ficha agora pode existir na biblioteca da sala antes de entrar
-            em combate. O primeiro importador aceita personagens exportados
-            pelo Fultimator.
+            Spells ofensivas importadas do Fultimator agora entram no fluxo
+            de combate com Magic Check, custo de MP e turno autoritativos.
+            Efeitos ainda não estruturados continuam manuais.
           </p>
 
           <div className="player-session">
@@ -1754,43 +1775,60 @@ export default function App() {
                     )}
 
                     {selectedAbility ? (
-                      <small>
-                        {selectedAbility.effectType === 'heal' ? (
-                          <>
-                            Cura {selectedAbility.healAmount} HP ·{' '}
-                            {selectedAbility.mpCost} MP
-                          </>
-                        ) : (
-                          <>
-                            {selectedAbility.checkAttributeA.toUpperCase()} d
-                            {attributeDie(
-                              selected,
-                              selectedAbility.checkAttributeA,
-                            )}{' '}
-                            + {selectedAbility.checkAttributeB.toUpperCase()} d
-                            {attributeDie(
-                              selected,
-                              selectedAbility.checkAttributeB,
-                            )}{' '}
-                            {selectedAbility.checkBonus >= 0 ? '+' : ''}
-                            {selectedAbility.checkBonus} ·{' '}
-                            {selectedAbility.mpCost} MP
-                            {selectedAbility.effectType === 'damage' ? (
-                              <>
-                                {' '}· HR +{selectedAbility.damageBonus} ·{' '}
-                                {damageTypeLabel(selectedAbility.damageType)} vs
-                                MDEF
-                              </>
-                            ) : (
-                              <>
-                                {' '}· aplica{' '}
-                                {statusLabel(selectedAbility.statusEffect)} vs
-                                MDEF
-                              </>
-                            )}
-                          </>
-                        )}
-                      </small>
+                      <>
+                        <small>
+                          {selectedAbility.effectType === 'heal' ? (
+                            <>
+                              Cura {selectedAbility.healAmount} HP ·{' '}
+                              {selectedAbility.mpCost} MP
+                            </>
+                          ) : (
+                            <>
+                              {selectedAbility.checkAttributeA.toUpperCase()} d
+                              {attributeDie(
+                                selected,
+                                selectedAbility.checkAttributeA,
+                              )}{' '}
+                              + {selectedAbility.checkAttributeB.toUpperCase()} d
+                              {attributeDie(
+                                selected,
+                                selectedAbility.checkAttributeB,
+                              )}{' '}
+                              {selectedAbility.checkBonus >= 0 ? '+' : ''}
+                              {selectedAbility.checkBonus} ·{' '}
+                              {selectedAbility.mpCost} MP
+                              {selectedAbility.effectType === 'damage' ? (
+                                <>
+                                  {' '}· HR +{selectedAbility.damageBonus} ·{' '}
+                                  {damageTypeLabel(selectedAbility.damageType)} vs
+                                  MDEF
+                                </>
+                              ) : selectedAbility.effectType === 'status' ? (
+                                <>
+                                  {' '}· aplica{' '}
+                                  {statusLabel(selectedAbility.statusEffect)} vs
+                                  MDEF
+                                </>
+                              ) : (
+                                <>
+                                  {' '}· Magic Check vs MDEF · efeito manual
+                                  {selectedAbility.maxTargets &&
+                                  selectedAbility.maxTargets > 1
+                                    ? ` · até ${selectedAbility.maxTargets} alvos na ficha`
+                                    : ''}
+                                </>
+                              )}
+                            </>
+                          )}
+                        </small>
+
+                        {selectedAbility.effectType === 'manual' &&
+                        selectedAbility.description ? (
+                          <p className="imported-spell-description">
+                            {selectedAbility.description}
+                          </p>
+                        ) : null}
+                      </>
                     ) : null}
                   </div>
                 ) : (
