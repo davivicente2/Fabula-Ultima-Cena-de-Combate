@@ -28,11 +28,13 @@ export type CombatantSeed = Omit<
   | 'baseMigDie'
   | 'baseWlpDie'
   | 'statuses'
+  | 'fabulaPoints'
 > & {
   attacks: CombatAttackSeed[]
   abilities: CombatAbilitySeed[]
   affinities: Partial<Record<DamageType, DamageAffinity>>
   statuses?: StatusEffect[]
+  fabulaPoints?: number
 }
 
 type CombatantRow = {
@@ -386,6 +388,7 @@ export type CombatAction = {
     | 'resource_adjustment'
     | 'ability'
     | 'inventory'
+    | 'check'
   requestedDelta: number
   appliedDelta: number
   previousHp: number
