@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { CharacterEditor } from './CharacterEditor'
 import { CharacterSheetView } from './CharacterSheetView'
 import {
   addCharacterToBattle,
@@ -6,7 +7,10 @@ import {
   listCharacters,
   subscribeToCharacterLibrary,
 } from '../lib/characterRepository'
-import type { CharacterRecord } from '../lib/characterRepository'
+import type {
+  CharacterKind,
+  CharacterRecord,
+} from '../lib/characterRepository'
 import { importFultimatorCharacter } from '../lib/fultimatorImport'
 import { loadBattleCombatants } from '../lib/battleRepository'
 import type { Combatant } from '../types/combat'
@@ -69,6 +73,10 @@ export function CharacterLibraryPanel({
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openCharacter, setOpenCharacter] = useState<CharacterRecord | null>(null)
+  const [editorCharacter, setEditorCharacter] =
+    useState<CharacterRecord | null>(null)
+  const [editorCreateKind, setEditorCreateKind] =
+    useState<CharacterKind | null>(null)
 
   const activeCharacterIds = useMemo(
     () =>
@@ -200,19 +208,45 @@ export function CharacterLibraryPanel({
           </small>
         </div>
 
-        <label className="character-library__import">
-          {importing ? 'Importando…' : 'Importar Fultimator JSON'}
-          <input
-            type="file"
-            accept=".json,application/json"
-            disabled={!roomId || importing}
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0] ?? null
-              void handleImport(file)
-              event.currentTarget.value = ''
+        <div className="character-library__header-actions">
+          <button
+            type="button"
+            onClick={() => {
+              setEditorCharacter(null)
+              setEditorCreateKind('character')
             }}
-          />
-        </label>
+            disabled={!roomId}
+          >
+            + Personagem
+          </button>
+
+          {isHost ? (
+            <button
+              type="button"
+              onClick={() => {
+                setEditorCharacter(null)
+                setEditorCreateKind('npc')
+              }}
+              disabled={!roomId}
+            >
+              + NPC
+            </button>
+          ) : null}
+
+          <label className="character-library__import">
+            {importing ? 'Importando…' : 'Importar Fultimator JSON'}
+            <input
+              type="file"
+              accept=".json,application/json"
+              disabled={!roomId || importing}
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0] ?? null
+                void handleImport(file)
+                event.currentTarget.value = ''
+              }}
+            />
+          </label>
+        </div>
       </div>
 
       {loading ? (
@@ -254,6 +288,18 @@ export function CharacterLibraryPanel({
                     >
                       Abrir ficha
                     </button>
+
+                    {isHost || ownedByCurrentUser ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditorCreateKind(null)
+                          setEditorCharacter(character)
+                        }}
+                      >
+                        Editar
+                      </button>
+                    ) : null}
 
                     {active ? (
                       <span className="character-library__active">
@@ -335,6 +381,24 @@ export function CharacterLibraryPanel({
         <CharacterSheetView
           character={openCharacter}
           onClose={() => setOpenCharacter(null)}
+        />
+      ) : null}
+
+      {roomId && (editorCharacter || editorCreateKind) ? (
+        <CharacterEditor
+          roomId={roomId}
+          character={editorCharacter}
+          createKind={editorCreateKind ?? undefined}
+          onClose={() => {
+            setEditorCharacter(null)
+            setEditorCreateKind(null)
+          }}
+          onSaved={async () => {
+            setCharacters(await listCharacters(roomId))
+            if (battleId) {
+              onCombatantsChange(await loadBattleCombatants(battleId))
+            }
+          }}
         />
       ) : null}
     </section>
