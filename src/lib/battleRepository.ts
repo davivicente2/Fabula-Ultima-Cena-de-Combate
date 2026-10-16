@@ -90,6 +90,8 @@ type CombatAbilityRow = {
   damage_type: DamageType | null
   heal_amount: number
   status_effect: StatusEffect | null
+  description: string | null
+  check_defense: 'def' | 'mdef' | 'none' | 'auto'
   sort_order: number
 }
 
@@ -451,6 +453,8 @@ function toCombatAbility(row: CombatAbilityRow): CombatAbility {
     damageType: row.damage_type,
     healAmount: row.heal_amount,
     statusEffect: row.status_effect,
+    description: row.description,
+    checkDefense: row.check_defense,
   }
 }
 
@@ -538,7 +542,7 @@ async function loadCombatants(battleId: string) {
       supabase
         .from('combatant_abilities')
         .select(
-          'id, combatant_id, name, effect_type, target_relation, check_attribute_a, check_attribute_b, check_bonus, mp_cost, damage_bonus, damage_type, heal_amount, status_effect, sort_order',
+          'id, combatant_id, name, effect_type, target_relation, check_attribute_a, check_attribute_b, check_bonus, mp_cost, damage_bonus, damage_type, heal_amount, status_effect, description, check_defense, sort_order',
         )
         .in('combatant_id', combatantIds)
         .order('sort_order', { ascending: true }),
@@ -651,6 +655,10 @@ async function seedCombatants(battleId: string, seeds: CombatantSeed[]) {
       damage_type: ability.damageType,
       heal_amount: ability.healAmount,
       status_effect: ability.statusEffect,
+      description: ability.description ?? null,
+      check_defense:
+        ability.checkDefense ??
+        (ability.effectType === 'heal' ? 'auto' : 'mdef'),
       sort_order: index,
     }))
   })
