@@ -14,6 +14,7 @@ import {
   loadCurrentPlayerIdentity,
   loadOrCreateBattle,
   performCombatantAbility,
+  performManualCombatantAbilityMulti,
   performCombatantAttack,
   performGuard,
   performInventoryItem,
@@ -538,6 +539,7 @@ export default function App() {
     useState<'attack' | 'ability' | 'inventory'>('attack')
   const [selectedAbilityId, setSelectedAbilityId] = useState('')
   const [abilityTargetId, setAbilityTargetId] = useState('')
+  const [abilityTargetIds, setAbilityTargetIds] = useState<string[]>([])
   const [selectedInventoryItem, setSelectedInventoryItem] =
     useState<InventoryItem>('remedy')
   const [inventoryTargetId, setInventoryTargetId] = useState('')
@@ -815,6 +817,27 @@ export default function App() {
   const abilityTarget = abilityTargets.find(
     (combatant) => combatant.id === abilityTargetId,
   )
+  const isMultiTargetAbility =
+    selectedAbility?.effectType === 'manual' &&
+    (selectedAbility.maxTargets ?? 1) > 1
+  const validAbilityTargetIds = abilityTargetIds.filter((targetId) =>
+    abilityTargets.some((combatant) => combatant.id === targetId),
+  )
+  const effectiveAbilityTargetIds =
+    selectedAbility?.effectType === 'manual'
+      ? isMultiTargetAbility
+        ? validAbilityTargetIds
+        : abilityTarget
+          ? [abilityTarget.id]
+          : []
+      : abilityTarget
+        ? [abilityTarget.id]
+        : []
+  const selectedAbilityMpCost = selectedAbility
+    ? selectedAbility.mpPerTarget
+      ? selectedAbility.mpCost * effectiveAbilityTargetIds.length
+      : selectedAbility.mpCost
+    : 0
   const inventoryTargets = selected
     ? combatants.filter(
         (combatant) =>
@@ -830,6 +853,10 @@ export default function App() {
       : actionMode === 'ability'
         ? abilityTarget
         : inventoryTarget
+  const hasActionTarget =
+    actionMode === 'ability'
+      ? effectiveAbilityTargetIds.length > 0
+      : Boolean(activeTarget)
   const activeTargets =
     actionMode === 'attack'
       ? attackTargets
@@ -906,13 +933,31 @@ export default function App() {
   useEffect(() => {
     if (!selectedAbility) {
       setAbilityTargetId('')
+      setAbilityTargetIds([])
       return
     }
 
     if (!abilityTargets.some((combatant) => combatant.id === abilityTargetId)) {
       setAbilityTargetId(abilityTargets[0]?.id ?? '')
     }
-  }, [selectedAbility, abilityTargets, abilityTargetId])
+
+    setAbilityTargetIds((current) => {
+      const maxTargets = Math.max(1, selectedAbility.maxTargets ?? 1)
+      const valid = current
+        .filter((targetId) =>
+          abilityTargets.some((combatant) => combatant.id === targetId),
+        )
+        .slice(0, maxTargets)
+
+      if (valid.length > 0) return valid
+      return abilityTargets[0] ? [abilityTargets[0].id] : []
+    })
+  }, [
+    selectedAbility?.id,
+    selectedAbility?.maxTargets,
+    abilityTargets,
+    abilityTargetId,
+  ])
 
 
   useEffect(() => {
@@ -1241,9 +1286,9 @@ export default function App() {
     if (
       !selected ||
       !selectedAbility ||
-      !abilityTarget ||
+      effectiveAbilityTargetIds.length === 0 ||
       !canActSelected ||
-      selected.mp < selectedAbility.mpCost ||
+      selected.mp < selectedAbilityMpCost ||
       connectionStatus !== 'online' ||
       combatActionBusy
     ) {
@@ -1254,6 +1299,49 @@ export default function App() {
     setErrorMessage(null)
 
     try {
+      if (selectedAbility.effectType === 'manual') {
+        const results = await performManualCombatantAbilityMulti(
+          selectedAbility.id,
+          effectiveAbilityTargetIds,
+          turnState.turnRevision,
+        )
+
+        const result = results[0]
+        if (!result) {
+          throw new Error('A ação customizada não retornou resultado.')
+        }
+
+        setCombatants((current) =>
+          current.map((combatant) =>
+            combatant.id === result.casterId
+              ? {
+                  ...combatant,
+                  mp: result.resultingMp,
+                  lastActedRound: result.actedRound,
+                  guardStartedRound:
+                    combatant.guardStartedRound !== null &&
+                    combatant.guardStartedRound !== undefined &&
+                    combatant.guardStartedRound < result.actedRound
+                      ? null
+                      : combatant.guardStartedRound,
+                }
+              : combatant,
+          ),
+        )
+
+        setTurnState((current) => ({
+          ...current,
+          started: result.nextSide !== null,
+          roundNumber: result.nextRound,
+          currentSide: result.nextSide,
+          turnRevision: result.nextRevision,
+        }))
+
+        return
+      }
+
+      if (!abilityTarget) return
+
       const result = await performCombatantAbility(
         selectedAbility.id,
         abilityTarget.id,
@@ -1922,42 +2010,106 @@ export default function App() {
                   </div>
                 )}
 
-                <label className="action-target">
-                  Alvo
-                  <select
-                    value={
-                      actionMode === 'attack'
-                        ? attackTargetId
-                        : actionMode === 'ability'
-                          ? abilityTargetId
-                          : inventoryTargetId
-                    }
-                    onChange={(event) => {
-                      if (actionMode === 'attack') {
-                        setAttackTargetId(event.target.value)
-                      } else if (actionMode === 'ability') {
-                        setAbilityTargetId(event.target.value)
-                      } else {
-                        setInventoryTargetId(event.target.value)
-                      }
-                    }}
-                    disabled={
-                      !canActSelected ||
-                      combatActionBusy ||
-                      activeTargets.length === 0
-                    }
-                  >
-                    {activeTargets.map((target) => (
-                      <option key={target.id} value={target.id}>
-                        {actionMode === 'attack'
-                          ? `${target.name} · DEF ${target.defense} · MDEF ${target.magicDefense}`
+                {actionMode === 'ability' && isMultiTargetAbility ? (
+                  <div className="action-target-multi">
+                    <div className="action-target-multi__header">
+                      <span>
+                        Alvos · {effectiveAbilityTargetIds.length}/
+                        {selectedAbility?.maxTargets ?? 1}
+                      </span>
+                      <small>
+                        {selectedAbility?.mpPerTarget
+                          ? `${selectedAbility.mpCost} MP por alvo · total ${selectedAbilityMpCost} MP`
+                          : `${selectedAbilityMpCost} MP total`}
+                      </small>
+                    </div>
+                    <div className="action-target-multi__options">
+                      {abilityTargets.map((target) => {
+                        const checked = effectiveAbilityTargetIds.includes(
+                          target.id,
+                        )
+                        const atLimit =
+                          effectiveAbilityTargetIds.length >=
+                          (selectedAbility?.maxTargets ?? 1)
+
+                        return (
+                          <label key={target.id}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={
+                                !canActSelected ||
+                                combatActionBusy ||
+                                (!checked && atLimit)
+                              }
+                              onChange={(event) => {
+                                setAbilityTargetIds((current) => {
+                                  if (event.target.checked) {
+                                    return [
+                                      ...current.filter(
+                                        (id) => id !== target.id,
+                                      ),
+                                      target.id,
+                                    ].slice(
+                                      0,
+                                      selectedAbility?.maxTargets ?? 1,
+                                    )
+                                  }
+
+                                  return current.filter(
+                                    (id) => id !== target.id,
+                                  )
+                                })
+                              }}
+                            />
+                            <span>{target.name}</span>
+                            <small>
+                              DEF {target.defense} · MDEF{' '}
+                              {target.magicDefense}
+                            </small>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <label className="action-target">
+                    Alvo
+                    <select
+                      value={
+                        actionMode === 'attack'
+                          ? attackTargetId
                           : actionMode === 'ability'
-                            ? `${target.name} · HP ${target.hp}/${target.maxHp} · DEF ${target.defense} · MDEF ${target.magicDefense}`
-                            : `${target.name} · HP ${target.hp}/${target.maxHp} · MP ${target.mp}/${target.maxMp} · ${target.statuses.length} status`}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                            ? abilityTargetId
+                            : inventoryTargetId
+                      }
+                      onChange={(event) => {
+                        if (actionMode === 'attack') {
+                          setAttackTargetId(event.target.value)
+                        } else if (actionMode === 'ability') {
+                          setAbilityTargetId(event.target.value)
+                        } else {
+                          setInventoryTargetId(event.target.value)
+                        }
+                      }}
+                      disabled={
+                        !canActSelected ||
+                        combatActionBusy ||
+                        activeTargets.length === 0
+                      }
+                    >
+                      {activeTargets.map((target) => (
+                        <option key={target.id} value={target.id}>
+                          {actionMode === 'attack'
+                            ? `${target.name} · DEF ${target.defense} · MDEF ${target.magicDefense}`
+                            : actionMode === 'ability'
+                              ? `${target.name} · HP ${target.hp}/${target.maxHp} · DEF ${target.defense} · MDEF ${target.magicDefense}`
+                              : `${target.name} · HP ${target.hp}/${target.maxHp} · MP ${target.mp}/${target.maxMp} · ${target.statuses.length} status`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </div>
             </div>
           ) : null}
@@ -2106,7 +2258,7 @@ export default function App() {
               }
               disabled={
                 !selected ||
-                !activeTarget ||
+                !hasActionTarget ||
                 !canActSelected ||
                 connectionStatus !== 'online' ||
                 combatActionBusy ||
@@ -2114,7 +2266,7 @@ export default function App() {
                   ? !selectedAttack
                   : actionMode === 'ability'
                     ? !selectedAbility ||
-                      selected.mp < selectedAbility.mpCost
+                      selected.mp < selectedAbilityMpCost
                     : selected.ip <
                       inventoryItemCost(selectedInventoryItem))
               }
@@ -2127,7 +2279,7 @@ export default function App() {
                   ? usingAbility
                     ? 'Usando…'
                     : selectedAbility
-                      ? `${selectedAbility.name} · ${selectedAbility.mpCost} MP`
+                      ? `${selectedAbility.name} · ${selectedAbilityMpCost} MP`
                       : 'Habilidade'
                   : usingInventory
                     ? 'Usando item…'
