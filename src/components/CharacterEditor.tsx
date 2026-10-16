@@ -96,6 +96,8 @@ function defaultAbility(index = 0): NormalizedCombatAbility {
     damageType: 'physical',
     healAmount: 0,
     statusEffect: null,
+    description: '',
+    checkDefense: 'mdef',
     sortOrder: index,
   }
 }
@@ -232,6 +234,16 @@ function sanitizeProfile(profile: NormalizedCombatProfile) {
           effectType === 'status'
             ? (ability.statusEffect ?? 'slow')
             : null,
+        description:
+          effectType === 'manual'
+            ? (ability.description ?? '').trim()
+            : null,
+        checkDefense:
+          effectType === 'manual'
+            ? (ability.checkDefense ?? 'none')
+            : effectType === 'heal'
+              ? 'auto'
+              : 'mdef',
         sortOrder: index,
       }
     })
@@ -662,7 +674,8 @@ export function CharacterEditor({
               <div>
                 <h3>Habilidades</h3>
                 <small>
-                  Automação inicial: dano, cura ou aplicação de status.
+                  Dano, cura e status são automáticos. Use Manual para
+                  qualquer skill/spell que ainda não modelamos.
                 </small>
               </div>
               <button
@@ -729,7 +742,11 @@ export function CharacterEditor({
                           updateAbility(index, {
                             effectType,
                             targetRelation:
-                              effectType === 'heal' ? 'ally' : 'enemy',
+                              effectType === 'heal'
+                                ? 'ally'
+                                : effectType === 'manual'
+                                  ? 'any'
+                                  : 'enemy',
                             damageType:
                               effectType === 'damage'
                                 ? (ability.damageType ?? 'physical')
@@ -742,12 +759,19 @@ export function CharacterEditor({
                               effectType === 'status'
                                 ? (ability.statusEffect ?? 'slow')
                                 : null,
+                            checkDefense:
+                              effectType === 'manual'
+                                ? (ability.checkDefense ?? 'none')
+                                : effectType === 'heal'
+                                  ? 'auto'
+                                  : 'mdef',
                           })
                         }}
                       >
                         <option value="damage">Dano</option>
                         <option value="heal">Cura</option>
                         <option value="status">Status</option>
+                        <option value="manual">Manual / customizada</option>
                       </select>
                     </label>
 
@@ -764,6 +788,8 @@ export function CharacterEditor({
                       >
                         <option value="enemy">Inimigo</option>
                         <option value="ally">Aliado</option>
+                        <option value="self">Você mesmo</option>
+                        <option value="any">Qualquer</option>
                       </select>
                     </label>
 
@@ -781,7 +807,9 @@ export function CharacterEditor({
                       />
                     </label>
 
-                    {ability.effectType !== 'heal' ? (
+                    {ability.effectType !== 'heal' &&
+                    !(ability.effectType === 'manual' &&
+                      ability.checkDefense === 'auto') ? (
                       <>
                         <label>
                           Atributo 1
@@ -840,6 +868,31 @@ export function CharacterEditor({
                       </>
                     ) : null}
 
+                    {ability.effectType === 'manual' ? (
+                      <label>
+                        Resolver check contra
+                        <select
+                          value={ability.checkDefense ?? 'none'}
+                          onChange={(event) =>
+                            updateAbility(index, {
+                              checkDefense: event.target.value as
+                                | 'def'
+                                | 'mdef'
+                                | 'none'
+                                | 'auto',
+                            })
+                          }
+                        >
+                          <option value="mdef">MDEF do alvo</option>
+                          <option value="def">DEF do alvo</option>
+                          <option value="none">
+                            Sem dificuldade · apenas rolar
+                          </option>
+                          <option value="auto">Sem teste</option>
+                        </select>
+                      </label>
+                    ) : null}
+
                     {ability.effectType === 'damage' ? (
                       <>
                         <label>
@@ -886,7 +939,7 @@ export function CharacterEditor({
                           }
                         />
                       </label>
-                    ) : (
+                    ) : ability.effectType === 'status' ? (
                       <label>
                         Status
                         <select
@@ -904,6 +957,20 @@ export function CharacterEditor({
                             </option>
                           ))}
                         </select>
+                      </label>
+                    ) : (
+                      <label className="character-editor__wide">
+                        Descrição / efeito a resolver na mesa
+                        <textarea
+                          rows={4}
+                          value={ability.description ?? ''}
+                          onChange={(event) =>
+                            updateAbility(index, {
+                              description: event.target.value,
+                            })
+                          }
+                          placeholder="Ex.: escolha um aliado; ele pode realizar imediatamente uma ação de Equipamento sem gastar o turno."
+                        />
                       </label>
                     )}
                   </div>
