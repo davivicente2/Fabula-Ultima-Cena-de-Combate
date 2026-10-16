@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { CharacterLibraryPanel } from './components/CharacterLibraryPanel'
 import { ScenePanel } from './components/ScenePanel'
+import { TableToolsPanel } from './components/TableToolsPanel'
 import { CombatantCard } from './components/CombatantCard'
 import {
   adjustCombatantResource,
@@ -355,15 +356,42 @@ function combatActionText(action: CombatAction) {
     return `${actor} · ${user} usou ${item} (${ipSpent} IP) em ${target}: removeu ${action.statusesRemoved ?? 0} status.`
   }
 
+  if (action.actionType === 'check') {
+    const combatant = action.targetName ?? 'combatente'
+    const name = action.checkName ?? 'Check'
+    const roll =
+      action.rollA !== null &&
+      action.rollB !== null &&
+      action.checkTotal !== null
+        ? `${action.rollA} + ${action.rollB} = ${action.checkTotal}`
+        : '—'
+
+    if (action.isFumble) {
+      return `${actor} · ${combatant} fez ${name}: ${roll} · falha crítica.`
+    }
+
+    if (action.checkDifficulty === null) {
+      const critical = action.isCritical ? ' · crítico' : ''
+      return `${actor} · ${combatant} fez ${name}: ${roll}${critical}.`
+    }
+
+    const result = action.isHit ? 'sucesso' : 'falha'
+    const critical = action.isCritical ? ' · crítico' : ''
+    return `${actor} · ${combatant} fez ${name}: ${roll} vs ${action.checkDifficulty} · ${result}${critical}.`
+  }
+
   if (action.actionType === 'resource_adjustment') {
-    const resource = action.resourceName?.toUpperCase() ?? 'Recurso'
+    const resource =
+      action.resourceName === 'fabula'
+        ? 'Fabula Point'
+        : action.resourceName?.toUpperCase() ?? 'Recurso'
     const combatant = action.targetName ?? 'combatente'
 
     if (action.appliedDelta < 0) {
-      return `${actor} gastou ${Math.abs(action.appliedDelta)} ${resource} de ${combatant}.`
+      return `${actor} gastou ${Math.abs(action.appliedDelta)} ${resource}${Math.abs(action.appliedDelta) === 1 ? '' : 's'} de ${combatant}.`
     }
 
-    return `${actor} recuperou ${action.appliedDelta} ${resource} de ${combatant}.`
+    return `${actor} recuperou ${action.appliedDelta} ${resource}${action.appliedDelta === 1 ? '' : 's'} de ${combatant}.`
   }
 
   if (action.actionType === 'ability') {
@@ -1598,7 +1626,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Ações genéricas · v0.19</span>
+          <span className="eyebrow">Ferramentas de mesa · v0.20</span>
           <h1>Fabula Ultima · Sala</h1>
         </div>
 
@@ -1744,6 +1772,23 @@ export default function App() {
             selected={selected ?? null}
             isHost={playerIdentity?.role === 'host'}
             onBattleLoaded={applyBattle}
+            onError={setErrorMessage}
+          />
+
+          <TableToolsPanel
+            battleId={battleId}
+            selected={selected ?? null}
+            canControlSelected={canControlSelected}
+            isHost={playerIdentity?.role === 'host'}
+            onFabulaPointsChange={(combatantId, value) => {
+              setCombatants((current) =>
+                current.map((combatant) =>
+                  combatant.id === combatantId
+                    ? { ...combatant, fabulaPoints: value }
+                    : combatant,
+                ),
+              )
+            }}
             onError={setErrorMessage}
           />
 
