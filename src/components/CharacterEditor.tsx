@@ -98,6 +98,8 @@ function defaultAbility(index = 0): NormalizedCombatAbility {
     statusEffect: null,
     description: '',
     checkDefense: 'mdef',
+    maxTargets: 1,
+    mpPerTarget: false,
     sortOrder: index,
   }
 }
@@ -244,6 +246,14 @@ function sanitizeProfile(profile: NormalizedCombatProfile) {
             : effectType === 'heal'
               ? 'auto'
               : 'mdef',
+        maxTargets:
+          effectType === 'manual'
+            ? Math.min(20, Math.max(1, Math.trunc(ability.maxTargets ?? 1)))
+            : 1,
+        mpPerTarget:
+          effectType === 'manual'
+            ? Boolean(ability.mpPerTarget)
+            : false,
         sortOrder: index,
       }
     })
@@ -765,6 +775,14 @@ export function CharacterEditor({
                                 : effectType === 'heal'
                                   ? 'auto'
                                   : 'mdef',
+                            maxTargets:
+                              effectType === 'manual'
+                                ? (ability.maxTargets ?? 1)
+                                : 1,
+                            mpPerTarget:
+                              effectType === 'manual'
+                                ? Boolean(ability.mpPerTarget)
+                                : false,
                           })
                         }}
                       >
@@ -891,6 +909,45 @@ export function CharacterEditor({
                           <option value="auto">Sem teste</option>
                         </select>
                       </label>
+                    ) : null}
+
+
+                    {ability.effectType === 'manual' ? (
+                      <>
+                        <label>
+                          Máximo de alvos
+                          <input
+                            type="number"
+                            min={1}
+                            max={20}
+                            value={ability.maxTargets ?? 1}
+                            onChange={(event) =>
+                              updateAbility(index, {
+                                maxTargets: Math.min(
+                                  20,
+                                  Math.max(
+                                    1,
+                                    numeric(event.target.value, 1),
+                                  ),
+                                ),
+                              })
+                            }
+                          />
+                        </label>
+
+                        <label className="character-editor__checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(ability.mpPerTarget)}
+                            onChange={(event) =>
+                              updateAbility(index, {
+                                mpPerTarget: event.target.checked,
+                              })
+                            }
+                          />
+                          Custo de MP é por alvo
+                        </label>
+                      </>
                     ) : null}
 
                     {ability.effectType === 'damage' ? (
