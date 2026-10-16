@@ -231,9 +231,9 @@ begin
     raise exception 'Selecione pelo menos um alvo.';
   end if;
 
-  select count(distinct target_id)
+  select count(distinct selected_target.id)
   into v_distinct_target_count
-  from unnest(p_target_ids) as target_id;
+  from unnest(p_target_ids) as selected_target(id);
 
   if v_distinct_target_count <> v_target_count then
     raise exception 'A lista de alvos contém duplicatas.';
