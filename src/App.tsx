@@ -949,8 +949,20 @@ export default function App() {
         )
         .slice(0, maxTargets)
 
-      if (valid.length > 0) return valid
-      return abilityTargets[0] ? [abilityTargets[0].id] : []
+      const next = valid.length > 0
+        ? valid
+        : abilityTargets[0]
+          ? [abilityTargets[0].id]
+          : []
+
+      if (
+        current.length === next.length &&
+        current.every((targetId, index) => targetId === next[index])
+      ) {
+        return current
+      }
+
+      return next
     })
   }, [
     selectedAbility?.id,
@@ -1914,6 +1926,10 @@ export default function App() {
                           {selected.abilities.map((ability) => (
                             <option key={ability.id} value={ability.id}>
                               {ability.name} · {ability.mpCost} MP
+                              {ability.effectType === 'manual' &&
+                              ability.mpPerTarget
+                                ? '/alvo'
+                                : ''}
                             </option>
                           ))}
                         </select>
@@ -1933,8 +1949,14 @@ export default function App() {
                           ) : selectedAbility.effectType === 'manual' &&
                             selectedAbility.checkDefense === 'auto' ? (
                             <>
-                              Sem teste · {selectedAbility.mpCost} MP · efeito
-                              manual
+                              Sem teste ·{' '}
+                              {selectedAbility.mpPerTarget
+                                ? `${selectedAbility.mpCost} MP/alvo`
+                                : `${selectedAbility.mpCost} MP`}{' '}
+                              · efeito manual
+                              {(selectedAbility.maxTargets ?? 1) > 1
+                                ? ` · até ${selectedAbility.maxTargets} alvos`
+                                : ''}
                             </>
                           ) : (
                             <>
@@ -1950,7 +1972,14 @@ export default function App() {
                               )}{' '}
                               {selectedAbility.checkBonus >= 0 ? '+' : ''}
                               {selectedAbility.checkBonus} ·{' '}
-                              {selectedAbility.mpCost} MP
+                              {selectedAbility.effectType === 'manual' &&
+                              selectedAbility.mpPerTarget
+                                ? `${selectedAbility.mpCost} MP/alvo`
+                                : `${selectedAbility.mpCost} MP`}
+                              {selectedAbility.effectType === 'manual' &&
+                              (selectedAbility.maxTargets ?? 1) > 1
+                                ? ` · até ${selectedAbility.maxTargets} alvos`
+                                : ''}
                               {selectedAbility.effectType === 'damage' ? (
                                 <>
                                   {' '}· HR +{selectedAbility.damageBonus} ·{' '}
