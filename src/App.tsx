@@ -1626,7 +1626,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Ferramentas de mesa · v0.20</span>
+          <span className="eyebrow">Ciclo de personagens · v0.21</span>
           <h1>Fabula Ultima · Sala</h1>
         </div>
 

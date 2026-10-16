@@ -4,7 +4,11 @@ import { CharacterSheetView } from './CharacterSheetView'
 import {
   addCharacterToBattle,
   createCharacterRecord,
+  deleteCharacterRecord,
+  duplicateCharacterRecord,
+  duplicateCharacterToBattle,
   listCharacters,
+  removeCharacterFromScene,
   subscribeToCharacterLibrary,
 } from '../lib/characterRepository'
 import type {
@@ -70,6 +74,7 @@ export function CharacterLibraryPanel({
   const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [addingId, setAddingId] = useState<string | null>(null)
+  const [lifecycleBusyId, setLifecycleBusyId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openCharacter, setOpenCharacter] = useState<CharacterRecord | null>(null)
@@ -194,6 +199,116 @@ export function CharacterLibraryPanel({
     }
   }
 
+
+  async function refreshLibraryAndScene() {
+    if (!roomId) return
+
+    setCharacters(await listCharacters(roomId))
+
+    if (battleId) {
+      onCombatantsChange(await loadBattleCombatants(battleId))
+    }
+  }
+
+  async function handleRemove(character: CharacterRecord) {
+    if (!isHost || lifecycleBusyId) return
+
+    const confirmed = window.confirm(
+      `Remover ${character.name} desta cena? HP, MP, IP, Fabula Points e status atuais serão salvos na ficha.`,
+    )
+
+    if (!confirmed) return
+
+    setLifecycleBusyId(character.id)
+    setError(null)
+    setMessage(null)
+
+    try {
+      await removeCharacterFromScene(character.id)
+      await refreshLibraryAndScene()
+      setMessage(`${character.name} removido da cena; a ficha foi preservada.`)
+    } catch (reason) {
+      console.error(reason)
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'Não foi possível remover o personagem da cena.',
+      )
+    } finally {
+      setLifecycleBusyId(null)
+    }
+  }
+
+  async function handleDelete(character: CharacterRecord) {
+    if (lifecycleBusyId) return
+
+    const confirmed = window.confirm(
+      `Excluir definitivamente a ficha de ${character.name}? Esta ação não pode ser desfeita.`,
+    )
+
+    if (!confirmed) return
+
+    setLifecycleBusyId(character.id)
+    setError(null)
+    setMessage(null)
+
+    try {
+      await deleteCharacterRecord(character.id)
+      setOpenCharacter((current) =>
+        current?.id === character.id ? null : current,
+      )
+      setEditorCharacter((current) =>
+        current?.id === character.id ? null : current,
+      )
+      await refreshLibraryAndScene()
+      setMessage(`${character.name} excluído da biblioteca.`)
+    } catch (reason) {
+      console.error(reason)
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'Não foi possível excluir a ficha.',
+      )
+    } finally {
+      setLifecycleBusyId(null)
+    }
+  }
+
+  async function handleDuplicate(
+    character: CharacterRecord,
+    addToScene: boolean,
+  ) {
+    if (!isHost || lifecycleBusyId) return
+
+    setLifecycleBusyId(character.id)
+    setError(null)
+    setMessage(null)
+
+    try {
+      const result =
+        addToScene && battleId
+          ? await duplicateCharacterToBattle(character.id, battleId)
+          : await duplicateCharacterRecord(character.id)
+
+      await refreshLibraryAndScene()
+
+      setMessage(
+        addToScene
+          ? `${result.character_name} criado e adicionado à cena.`
+          : `${result.character_name} criado na biblioteca.`,
+      )
+    } catch (reason) {
+      console.error(reason)
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'Não foi possível duplicar a ficha.',
+      )
+    } finally {
+      setLifecycleBusyId(null)
+    }
+  }
+
   return (
     <section className="character-library">
       <div className="character-library__header">
@@ -296,6 +411,7 @@ export function CharacterLibraryPanel({
                           setEditorCreateKind(null)
                           setEditorCharacter(character)
                         }}
+                        disabled={lifecycleBusyId === character.id}
                       >
                         Editar
                       </button>
@@ -309,12 +425,73 @@ export function CharacterLibraryPanel({
                       <button
                         type="button"
                         onClick={() => void handleAdd(character)}
-                        disabled={!battleId || addingId !== null}
+                        disabled={
+                          !battleId ||
+                          addingId !== null ||
+                          lifecycleBusyId !== null
+                        }
                       >
                         {addingId === character.id
                           ? 'Adicionando…'
                           : 'Adicionar à cena'}
                       </button>
+                    ) : null}
+
+                    {isHost || ownedByCurrentUser ? (
+                      <details className="character-library__more">
+                        <summary aria-label={`Mais ações para ${character.name}`}>
+                          ⋯
+                        </summary>
+                        <div>
+                          {isHost ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleDuplicate(character, false)
+                              }
+                              disabled={lifecycleBusyId !== null}
+                            >
+                              Duplicar ficha
+                            </button>
+                          ) : null}
+
+                          {isHost &&
+                          active &&
+                          character.kind === 'npc' &&
+                          battleId ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleDuplicate(character, true)
+                              }
+                              disabled={lifecycleBusyId !== null}
+                            >
+                              + Cópia nesta cena
+                            </button>
+                          ) : null}
+
+                          {isHost && active ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleRemove(character)}
+                              disabled={lifecycleBusyId !== null}
+                            >
+                              Remover da cena
+                            </button>
+                          ) : null}
+
+                          {!active ? (
+                            <button
+                              type="button"
+                              className="is-danger"
+                              onClick={() => void handleDelete(character)}
+                              disabled={lifecycleBusyId !== null}
+                            >
+                              Excluir ficha
+                            </button>
+                          ) : null}
+                        </div>
+                      </details>
                     ) : null}
                   </div>
                 </div>
