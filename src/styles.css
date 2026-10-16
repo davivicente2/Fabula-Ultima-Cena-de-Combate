@@ -1672,7 +1672,8 @@ h2 {
 }
 
 .character-editor input,
-.character-editor select {
+.character-editor select,
+.character-editor textarea {
   width: 100%;
   min-height: 36px;
   padding: 7px 8px;
@@ -1685,7 +1686,8 @@ h2 {
 }
 
 .character-editor input:focus,
-.character-editor select:focus {
+.character-editor select:focus,
+.character-editor textarea:focus {
   border-color: rgba(190, 164, 246, 0.58);
 }
 
@@ -1943,4 +1945,24 @@ h2 {
   .scene-panel-v2__scene-row select {
     min-width: 0;
   }
+}
+
+
+.character-editor textarea {
+  resize: vertical;
+  min-height: 86px;
+  line-height: 1.45;
+}
+
+.generic-action-description {
+  max-width: 760px;
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-left: 2px solid rgba(190, 164, 246, 0.34);
+  border-radius: 0 8px 8px 0;
+  color: #adb0bf;
+  background: rgba(190, 164, 246, 0.045);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }

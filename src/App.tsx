@@ -373,6 +373,30 @@ function combatActionText(action: CombatAction) {
         ? action.previousResource - action.resultingResource
         : 0
 
+    if (action.abilityEffectType === 'manual') {
+      if (action.rollA === null || action.rollB === null) {
+        return `${actor} · ${caster} usou ${ability} (${mpSpent} MP) em ${target}. Efeito manual.`
+      }
+
+      const roll = `${action.rollA} + ${action.rollB}${action.checkTotal !== null ? ` = ${action.checkTotal}` : ''}`
+
+      if (action.isFumble) {
+        return `${actor} · ${caster} usou ${ability} (${mpSpent} MP) em ${target}: ${roll} · falha crítica. Efeito manual.`
+      }
+
+      if (action.targetDefense === null) {
+        const critical = action.isCritical ? ' · crítico' : ''
+        return `${actor} · ${caster} usou ${ability} (${mpSpent} MP) em ${target}: check ${roll}${critical}. Resolva o efeito manualmente.`
+      }
+
+      if (!action.isHit) {
+        return `${actor} · ${caster} usou ${ability} (${mpSpent} MP) em ${target}: check ${roll} vs ${action.targetDefense} · falhou.`
+      }
+
+      const critical = action.isCritical ? ' · crítico' : ''
+      return `${actor} · ${caster} usou ${ability} (${mpSpent} MP) em ${target}: check ${roll} vs ${action.targetDefense} · sucesso${critical}. Resolva o efeito manualmente.`
+    }
+
     if (action.abilityEffectType === 'heal') {
       return `${actor} · ${caster} usou ${ability} (${mpSpent} MP) em ${target}: recuperou ${action.healing ?? 0} HP.`
     }
@@ -772,11 +796,21 @@ export default function App() {
   )
   const abilityTargets =
     selected && selectedAbility
-      ? combatants.filter((combatant) =>
-          selectedAbility.targetRelation === 'ally'
-            ? combatant.side === selected.side && combatant.hp > 0
-            : combatant.side !== selected.side && combatant.hp > 0,
-        )
+      ? combatants.filter((combatant) => {
+          if (selectedAbility.targetRelation === 'self') {
+            return combatant.id === selected.id
+          }
+
+          if (selectedAbility.targetRelation === 'any') {
+            return true
+          }
+
+          if (selectedAbility.targetRelation === 'ally') {
+            return combatant.side === selected.side && combatant.hp > 0
+          }
+
+          return combatant.side !== selected.side && combatant.hp > 0
+        })
       : []
   const abilityTarget = abilityTargets.find(
     (combatant) => combatant.id === abilityTargetId,
@@ -1464,7 +1498,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Múltiplas cenas · v0.18</span>
+          <span className="eyebrow">Ações genéricas · v0.19</span>
           <h1>Fabula Ultima · Sala</h1>
         </div>
 
@@ -1801,43 +1835,64 @@ export default function App() {
                     )}
 
                     {selectedAbility ? (
-                      <small>
-                        {selectedAbility.effectType === 'heal' ? (
-                          <>
-                            Cura {selectedAbility.healAmount} HP ·{' '}
-                            {selectedAbility.mpCost} MP
-                          </>
-                        ) : (
-                          <>
-                            {selectedAbility.checkAttributeA.toUpperCase()} d
-                            {attributeDie(
-                              selected,
-                              selectedAbility.checkAttributeA,
-                            )}{' '}
-                            + {selectedAbility.checkAttributeB.toUpperCase()} d
-                            {attributeDie(
-                              selected,
-                              selectedAbility.checkAttributeB,
-                            )}{' '}
-                            {selectedAbility.checkBonus >= 0 ? '+' : ''}
-                            {selectedAbility.checkBonus} ·{' '}
-                            {selectedAbility.mpCost} MP
-                            {selectedAbility.effectType === 'damage' ? (
-                              <>
-                                {' '}· HR +{selectedAbility.damageBonus} ·{' '}
-                                {damageTypeLabel(selectedAbility.damageType)} vs
-                                MDEF
-                              </>
-                            ) : (
-                              <>
-                                {' '}· aplica{' '}
-                                {statusLabel(selectedAbility.statusEffect)} vs
-                                MDEF
-                              </>
-                            )}
-                          </>
-                        )}
-                      </small>
+                      <>
+                        <small>
+                          {selectedAbility.effectType === 'heal' ? (
+                            <>
+                              Cura {selectedAbility.healAmount} HP ·{' '}
+                              {selectedAbility.mpCost} MP
+                            </>
+                          ) : selectedAbility.effectType === 'manual' &&
+                            selectedAbility.checkDefense === 'auto' ? (
+                            <>
+                              Sem teste · {selectedAbility.mpCost} MP · efeito
+                              manual
+                            </>
+                          ) : (
+                            <>
+                              {selectedAbility.checkAttributeA.toUpperCase()} d
+                              {attributeDie(
+                                selected,
+                                selectedAbility.checkAttributeA,
+                              )}{' '}
+                              + {selectedAbility.checkAttributeB.toUpperCase()} d
+                              {attributeDie(
+                                selected,
+                                selectedAbility.checkAttributeB,
+                              )}{' '}
+                              {selectedAbility.checkBonus >= 0 ? '+' : ''}
+                              {selectedAbility.checkBonus} ·{' '}
+                              {selectedAbility.mpCost} MP
+                              {selectedAbility.effectType === 'damage' ? (
+                                <>
+                                  {' '}· HR +{selectedAbility.damageBonus} ·{' '}
+                                  {damageTypeLabel(selectedAbility.damageType)} vs
+                                  MDEF
+                                </>
+                              ) : selectedAbility.effectType === 'status' ? (
+                                <>
+                                  {' '}· aplica{' '}
+                                  {statusLabel(selectedAbility.statusEffect)} vs
+                                  MDEF
+                                </>
+                              ) : selectedAbility.checkDefense === 'def' ? (
+                                <> · vs DEF · efeito manual</>
+                              ) : selectedAbility.checkDefense === 'mdef' ? (
+                                <> · vs MDEF · efeito manual</>
+                              ) : (
+                                <> · check livre · efeito manual</>
+                              )}
+                            </>
+                          )}
+                        </small>
+
+                        {selectedAbility.effectType === 'manual' &&
+                        selectedAbility.description ? (
+                          <p className="generic-action-description">
+                            {selectedAbility.description}
+                          </p>
+                        ) : null}
+                      </>
                     ) : null}
                   </div>
                 ) : (
@@ -1897,7 +1952,7 @@ export default function App() {
                         {actionMode === 'attack'
                           ? `${target.name} · DEF ${target.defense} · MDEF ${target.magicDefense}`
                           : actionMode === 'ability'
-                            ? `${target.name} · HP ${target.hp}/${target.maxHp} · MDEF ${target.magicDefense}`
+                            ? `${target.name} · HP ${target.hp}/${target.maxHp} · DEF ${target.defense} · MDEF ${target.magicDefense}`
                             : `${target.name} · HP ${target.hp}/${target.maxHp} · MP ${target.mp}/${target.maxMp} · ${target.statuses.length} status`}
                       </option>
                     ))}

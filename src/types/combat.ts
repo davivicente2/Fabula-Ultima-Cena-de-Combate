@@ -40,8 +40,9 @@ export type CombatAttack = {
   damageType: DamageType
 }
 
-export type AbilityEffectType = 'damage' | 'heal' | 'status'
-export type AbilityTargetRelation = 'enemy' | 'ally'
+export type AbilityEffectType = 'damage' | 'heal' | 'status' | 'manual'
+export type AbilityTargetRelation = 'enemy' | 'ally' | 'self' | 'any'
+export type AbilityCheckDefense = 'def' | 'mdef' | 'none' | 'auto'
 
 export type CombatAbility = {
   id: string
@@ -56,6 +57,8 @@ export type CombatAbility = {
   damageType: DamageType | null
   healAmount: number
   statusEffect: StatusEffect | null
+  description?: string | null
+  checkDefense?: AbilityCheckDefense
 }
 
 export type Combatant = {
