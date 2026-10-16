@@ -23,6 +23,8 @@ export type NormalizedCombatAbility = {
   statusEffect: StatusEffect | null
   description?: string | null
   checkDefense?: AbilityCheckDefense
+  maxTargets?: number
+  mpPerTarget?: boolean
   sortOrder: number
 }
 

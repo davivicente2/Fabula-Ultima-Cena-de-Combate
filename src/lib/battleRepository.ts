@@ -92,6 +92,8 @@ type CombatAbilityRow = {
   status_effect: StatusEffect | null
   description: string | null
   check_defense: 'def' | 'mdef' | 'none' | 'auto'
+  max_targets: number
+  mp_per_target: boolean
   sort_order: number
 }
 
@@ -277,6 +279,33 @@ type CombatAbilityRpcRow = {
   next_revision: number
 }
 
+
+type ManualAbilityMultiRpcRow = {
+  action_id: string
+  caster_id: string
+  target_id: string
+  ability_name: string
+  roll_a: number | null
+  roll_b: number | null
+  check_total: number | null
+  high_roll: number | null
+  target_defense: number | null
+  is_hit: boolean
+  is_critical: boolean
+  is_fumble: boolean
+  previous_hp: number
+  resulting_hp: number
+  previous_mp: number
+  resulting_mp: number
+  mp_cost: number
+  target_count: number
+  acted_round: number
+  next_round: number
+  next_side: CombatSide | null
+  next_revision: number
+}
+
+
 type CombatAttackRpcRow = {
   action_id: string
   attacker_id: string
@@ -455,6 +484,8 @@ function toCombatAbility(row: CombatAbilityRow): CombatAbility {
     statusEffect: row.status_effect,
     description: row.description,
     checkDefense: row.check_defense,
+    maxTargets: row.max_targets,
+    mpPerTarget: row.mp_per_target,
   }
 }
 
@@ -542,7 +573,7 @@ async function loadCombatants(battleId: string) {
       supabase
         .from('combatant_abilities')
         .select(
-          'id, combatant_id, name, effect_type, target_relation, check_attribute_a, check_attribute_b, check_bonus, mp_cost, damage_bonus, damage_type, heal_amount, status_effect, description, check_defense, sort_order',
+          'id, combatant_id, name, effect_type, target_relation, check_attribute_a, check_attribute_b, check_bonus, mp_cost, damage_bonus, damage_type, heal_amount, status_effect, description, check_defense, max_targets, mp_per_target, sort_order',
         )
         .in('combatant_id', combatantIds)
         .order('sort_order', { ascending: true }),
@@ -659,6 +690,8 @@ async function seedCombatants(battleId: string, seeds: CombatantSeed[]) {
       check_defense:
         ability.checkDefense ??
         (ability.effectType === 'heal' ? 'auto' : 'mdef'),
+      max_targets: ability.maxTargets ?? 1,
+      mp_per_target: ability.mpPerTarget ?? false,
       sort_order: index,
     }))
   })
@@ -1280,6 +1313,46 @@ export async function performInventoryItem(
     nextSide: row.next_side,
     nextRevision: row.next_revision,
   }
+}
+
+export async function performManualCombatantAbilityMulti(
+  abilityId: string,
+  targetIds: string[],
+  expectedRevision: number,
+) {
+  const { data, error } = await supabase
+    .rpc('perform_manual_combatant_ability_multi', {
+      p_ability_id: abilityId,
+      p_target_ids: targetIds,
+      p_expected_revision: expectedRevision,
+    })
+
+  if (error) throw error
+
+  return (data as ManualAbilityMultiRpcRow[]).map((row) => ({
+    actionId: row.action_id,
+    casterId: row.caster_id,
+    targetId: row.target_id,
+    abilityName: row.ability_name,
+    rollA: row.roll_a,
+    rollB: row.roll_b,
+    checkTotal: row.check_total,
+    highRoll: row.high_roll,
+    targetDefense: row.target_defense,
+    isHit: row.is_hit,
+    isCritical: row.is_critical,
+    isFumble: row.is_fumble,
+    previousHp: row.previous_hp,
+    resultingHp: row.resulting_hp,
+    previousMp: row.previous_mp,
+    resultingMp: row.resulting_mp,
+    mpCost: row.mp_cost,
+    targetCount: row.target_count,
+    actedRound: row.acted_round,
+    nextRound: row.next_round,
+    nextSide: row.next_side,
+    nextRevision: row.next_revision,
+  }))
 }
 
 export async function performCombatantAbility(
