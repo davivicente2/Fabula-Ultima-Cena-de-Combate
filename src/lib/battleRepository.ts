@@ -28,11 +28,13 @@ export type CombatantSeed = Omit<
   | 'baseMigDie'
   | 'baseWlpDie'
   | 'statuses'
+  | 'fabulaPoints'
 > & {
   attacks: CombatAttackSeed[]
   abilities: CombatAbilitySeed[]
   affinities: Partial<Record<DamageType, DamageAffinity>>
   statuses?: StatusEffect[]
+  fabulaPoints?: number
 }
 
 type CombatantRow = {
@@ -46,6 +48,7 @@ type CombatantRow = {
   max_mp: number
   ip: number
   max_ip: number
+  fabula_points: number
   is_active: boolean
   sort_order: number
   controller_user_id: string | null
@@ -199,6 +202,7 @@ type CombatActionRow = {
     | 'resource_adjustment'
     | 'ability'
     | 'inventory'
+    | 'check'
   requested_delta: number
   applied_delta: number
   previous_hp: number
@@ -223,13 +227,18 @@ type CombatActionRow = {
   damage_affinity: DamageAffinity | 'neutral' | null
   round_number: number | null
   guard_applied: boolean | null
-  resource_name: 'mp' | 'ip' | null
+  resource_name: 'mp' | 'ip' | 'fabula' | null
   previous_resource: number | null
   resulting_resource: number | null
   inventory_item: InventoryItem | null
   previous_ip: number | null
   resulting_ip: number | null
   statuses_removed: number | null
+  check_name: string | null
+  check_attribute_a: AttributeName | null
+  check_attribute_b: AttributeName | null
+  check_bonus: number | null
+  check_difficulty: number | null
   created_at: string
 }
 
@@ -379,6 +388,7 @@ export type CombatAction = {
     | 'resource_adjustment'
     | 'ability'
     | 'inventory'
+    | 'check'
   requestedDelta: number
   appliedDelta: number
   previousHp: number
@@ -403,13 +413,18 @@ export type CombatAction = {
   damageAffinity: DamageAffinity | 'neutral' | null
   roundNumber: number | null
   guardApplied: boolean | null
-  resourceName: 'mp' | 'ip' | null
+  resourceName: 'mp' | 'ip' | 'fabula' | null
   previousResource: number | null
   resultingResource: number | null
   inventoryItem: InventoryItem | null
   previousIp: number | null
   resultingIp: number | null
   statusesRemoved: number | null
+  checkName: string | null
+  checkAttributeA: AttributeName | null
+  checkAttributeB: AttributeName | null
+  checkBonus: number | null
+  checkDifficulty: number | null
   createdAt: string
 }
 
@@ -447,6 +462,7 @@ function toCombatant(
     maxMp: row.max_mp,
     ip: row.ip,
     maxIp: row.max_ip,
+    fabulaPoints: row.fabula_points,
     dexDie: row.dex_die,
     insDie: row.ins_die,
     migDie: row.mig_die,
@@ -541,6 +557,11 @@ function toCombatAction(row: CombatActionRow): CombatAction {
     previousIp: row.previous_ip,
     resultingIp: row.resulting_ip,
     statusesRemoved: row.statuses_removed,
+    checkName: row.check_name,
+    checkAttributeA: row.check_attribute_a,
+    checkAttributeB: row.check_attribute_b,
+    checkBonus: row.check_bonus,
+    checkDifficulty: row.check_difficulty,
     createdAt: row.created_at,
   }
 }
@@ -549,7 +570,7 @@ async function loadCombatants(battleId: string) {
   const { data, error } = await supabase
     .from('combatants')
     .select(
-      'id, character_id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, base_dex_die, base_ins_die, base_mig_die, base_wlp_die, statuses, defense, magic_defense, last_acted_round, guard_started_round',
+      'id, character_id, name, side, hp, max_hp, mp, max_mp, ip, max_ip, fabula_points, is_active, sort_order, controller_user_id, dex_die, ins_die, mig_die, wlp_die, base_dex_die, base_ins_die, base_mig_die, base_wlp_die, statuses, defense, magic_defense, last_acted_round, guard_started_round',
     )
     .eq('battle_id', battleId)
     .order('sort_order', { ascending: true })
@@ -1184,7 +1205,7 @@ export async function loadCombatActions(
   const { data, error } = await supabase
     .from('combat_actions')
     .select(
-      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, ability_name, ability_effect_type, status_effect, healing, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, guard_applied, resource_name, previous_resource, resulting_resource, inventory_item, previous_ip, resulting_ip, statuses_removed, created_at',
+      'id, battle_id, actor_user_id, actor_display_name, target_combatant_id, target_name, action_type, requested_delta, applied_delta, previous_hp, resulting_hp, attacker_combatant_id, attacker_name, attack_name, ability_name, ability_effect_type, status_effect, healing, roll_a, roll_b, check_total, high_roll, target_defense, is_hit, is_critical, is_fumble, damage, damage_type, damage_affinity, round_number, guard_applied, resource_name, previous_resource, resulting_resource, inventory_item, previous_ip, resulting_ip, statuses_removed, check_name, check_attribute_a, check_attribute_b, check_bonus, check_difficulty, created_at',
     )
     .eq('battle_id', battleId)
     .order('created_at', { ascending: false })

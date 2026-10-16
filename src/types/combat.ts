@@ -74,6 +74,7 @@ export type Combatant = {
   maxMp: number
   ip: number
   maxIp: number
+  fabulaPoints: number
   dexDie: DieSize
   insDie: DieSize
   migDie: DieSize
