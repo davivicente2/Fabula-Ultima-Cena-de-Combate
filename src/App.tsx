@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { CharacterLibraryPanel } from './components/CharacterLibraryPanel'
+import { ScenePanel } from './components/ScenePanel'
 import { CombatantCard } from './components/CombatantCard'
 import {
   adjustCombatantResource,
@@ -9,6 +10,7 @@ import {
   endCombatantTurn,
   joinBattleRoom,
   loadCombatActions,
+  loadBattleScene,
   loadCurrentPlayerIdentity,
   loadOrCreateBattle,
   performCombatantAbility,
@@ -18,6 +20,7 @@ import {
   savePlayerDisplayName,
   startBattleTurns,
   stopBattleTurns,
+  subscribeToActiveBattle,
   subscribeToBattleTurnState,
   subscribeToCombatActions,
   subscribeToCombatantListChanges,
@@ -597,6 +600,41 @@ export default function App() {
 
     return subscribeToBattleTurnState(battleId, setTurnState)
   }, [battleId, connectionStatus])
+
+
+  useEffect(() => {
+    if (
+      !roomId ||
+      !playerIdentity?.userId ||
+      connectionStatus !== 'online'
+    ) {
+      return
+    }
+
+    return subscribeToActiveBattle(
+      roomId,
+      playerIdentity.userId,
+      (nextBattleId) => {
+        if (!nextBattleId || nextBattleId === battleId) return
+
+        void loadBattleScene(nextBattleId)
+          .then((battle) => applyBattle(battle))
+          .catch((reason) => {
+            console.error(reason)
+            setErrorMessage(
+              reason instanceof Error
+                ? reason.message
+                : 'Não foi possível acompanhar a mudança de cena.',
+            )
+          })
+      },
+    )
+  }, [
+    roomId,
+    playerIdentity?.userId,
+    battleId,
+    connectionStatus,
+  ])
 
   useEffect(() => {
     if (!battleId || connectionStatus !== 'online') return
@@ -1426,7 +1464,7 @@ export default function App() {
     <main className="game">
       <header className="game__topbar">
         <div>
-          <span className="eyebrow">Ficha persistente · v0.16</span>
+          <span className="eyebrow">Múltiplas cenas · v0.18</span>
           <h1>Fabula Ultima · Sala</h1>
         </div>
 
@@ -1500,9 +1538,9 @@ export default function App() {
           <span className="eyebrow">{battleName}</span>
           <h2>{selected?.name ?? 'Nenhum combatente'}</h2>
           <p>
-            A ficha agora pode existir na biblioteca da sala antes de entrar
-            em combate. O primeiro importador aceita personagens exportados
-            pelo Fultimator.
+            A sala agora pode manter cenas paralelas. Cada jogador escolhe
+            onde observar e o GM pode mover participantes sem deslocar o grupo
+            inteiro.
           </p>
 
           <div className="player-session">
@@ -1565,6 +1603,15 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          <ScenePanel
+            roomId={roomId}
+            battleId={battleId}
+            selected={selected ?? null}
+            isHost={playerIdentity?.role === 'host'}
+            onBattleLoaded={applyBattle}
+            onError={setErrorMessage}
+          />
 
           <CharacterLibraryPanel
             roomId={roomId}

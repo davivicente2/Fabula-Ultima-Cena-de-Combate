@@ -140,6 +140,22 @@ type PlayerIdentityRpcRow = {
   display_name: string
 }
 
+type BattleSceneRow = {
+  id: string
+  name: string
+  conflict_started: boolean
+  round_number: number
+  current_side: CombatSide | null
+  created_at: string
+}
+
+type MoveCombatantSceneRpcRow = {
+  combatant_id: string
+  source_battle_id: string
+  destination_battle_id: string
+  controller_user_id: string | null
+}
+
 type CombatantAssignmentRpcRow = {
   combatant_id: string
   controller_user_id: string | null
@@ -291,6 +307,14 @@ export type BattleTurnState = {
   turnRevision: number
 }
 
+export type BattleScene = {
+  id: string
+  name: string
+  conflictStarted: boolean
+  roundNumber: number
+  currentSide: CombatSide | null
+}
+
 export type LoadedBattle = {
   id: string
   name: string
@@ -306,6 +330,7 @@ export type PlayerIdentity = {
   userId: string
   role: PlayerRole
   displayName: string | null
+  activeBattleId: string | null
 }
 
 export type CombatAction = {
@@ -702,11 +727,11 @@ async function loadBattleTurnState(
 
 async function hydrateBattle(
   battle: BattleRow,
-  initialCombatants: CombatantSeed[],
+  initialCombatants: CombatantSeed[] = [],
 ): Promise<LoadedBattle> {
   let combatants = await loadCombatants(battle.id)
 
-  if (combatants.length === 0) {
+  if (combatants.length === 0 && initialCombatants.length > 0) {
     await seedCombatants(battle.id, initialCombatants)
     combatants = await loadCombatants(battle.id)
   }
@@ -795,10 +820,195 @@ export async function loadOrCreateBattle(
   if (battleLookupError) throw battleLookupError
 
   if (existingBattle) {
+    const userId = await ensureAnonymousSession()
+    const { data: membership, error: membershipError } = await supabase
+      .from('room_members')
+      .select('active_battle_id')
+      .eq('room_id', existingBattle.room_id)
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (membershipError) throw membershipError
+
+    const activeBattleId =
+      (membership?.active_battle_id as string | null | undefined) ?? null
+
+    if (activeBattleId) {
+      return loadBattleScene(activeBattleId)
+    }
+
     return hydrateBattle(existingBattle as BattleRow, initialCombatants)
   }
 
   return createBattleRoom(initialCombatants)
+}
+
+export async function listBattleScenes(
+  roomId: string,
+): Promise<BattleScene[]> {
+  const { data, error } = await supabase
+    .from('battles')
+    .select('id, name, conflict_started, round_number, current_side, created_at')
+    .eq('room_id', roomId)
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+
+  return (data as BattleSceneRow[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    conflictStarted: row.conflict_started,
+    roundNumber: row.round_number,
+    currentSide: row.current_side,
+  }))
+}
+
+export async function loadBattleScene(
+  battleId: string,
+): Promise<LoadedBattle> {
+  const { data, error } = await supabase
+    .from('battles')
+    .select(
+      'id, name, room_id, conflict_started, round_number, initiative_side, current_side, turn_revision',
+    )
+    .eq('id', battleId)
+    .single()
+
+  if (error) throw error
+
+  return hydrateBattle(data as BattleRow)
+}
+
+export async function switchBattleScene(battleId: string) {
+  const { error } = await supabase
+    .rpc('set_my_active_battle', {
+      p_battle_id: battleId,
+    })
+    .single()
+
+  if (error) throw error
+
+  return loadBattleScene(battleId)
+}
+
+export async function createBattleScene(roomId: string, name: string) {
+  const { data, error } = await supabase
+    .rpc('create_battle_scene', {
+      p_room_id: roomId,
+      p_name: name,
+    })
+    .single()
+
+  if (error) throw error
+
+  const row = data as {
+    battle_id: string
+    battle_name: string
+  }
+
+  return loadBattleScene(row.battle_id)
+}
+
+export async function renameBattleScene(
+  battleId: string,
+  name: string,
+) {
+  const { data, error } = await supabase
+    .rpc('rename_battle_scene', {
+      p_battle_id: battleId,
+      p_name: name,
+    })
+    .single()
+
+  if (error) throw error
+
+  return data as {
+    battle_id: string
+    battle_name: string
+  }
+}
+
+export async function moveCombatantToScene(
+  combatantId: string,
+  destinationBattleId: string,
+) {
+  const { data, error } = await supabase
+    .rpc('move_combatant_to_battle', {
+      p_combatant_id: combatantId,
+      p_destination_battle_id: destinationBattleId,
+    })
+    .single()
+
+  if (error) throw error
+
+  const row = data as MoveCombatantSceneRpcRow
+
+  return {
+    combatantId: row.combatant_id,
+    sourceBattleId: row.source_battle_id,
+    destinationBattleId: row.destination_battle_id,
+    controllerUserId: row.controller_user_id,
+  }
+}
+
+export function subscribeToActiveBattle(
+  roomId: string,
+  userId: string,
+  onChange: (battleId: string) => void,
+) {
+  const channel = supabase
+    .channel(`active-battle-${roomId}-${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'room_members',
+        filter: `room_id=eq.${roomId}`,
+      },
+      (payload) => {
+        const row = payload.new as {
+          user_id: string
+          active_battle_id: string | null
+        }
+
+        if (row.user_id === userId && row.active_battle_id) {
+          onChange(row.active_battle_id)
+        }
+      },
+    )
+    .subscribe()
+
+  return () => {
+    void supabase.removeChannel(channel)
+  }
+}
+
+export function subscribeToBattleScenes(
+  roomId: string,
+  onChange: (scenes: BattleScene[]) => void,
+) {
+  const refresh = () => {
+    void listBattleScenes(roomId).then(onChange)
+  }
+
+  const channel = supabase
+    .channel(`battle-scenes-${roomId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'battles',
+        filter: `room_id=eq.${roomId}`,
+      },
+      refresh,
+    )
+    .subscribe()
+
+  return () => {
+    void supabase.removeChannel(channel)
+  }
 }
 
 export async function loadCurrentPlayerIdentity(
@@ -808,7 +1018,7 @@ export async function loadCurrentPlayerIdentity(
 
   const { data, error } = await supabase
     .from('room_members')
-    .select('user_id, role, display_name')
+    .select('user_id, role, display_name, active_battle_id')
     .eq('room_id', roomId)
     .eq('user_id', userId)
     .single()
@@ -819,6 +1029,7 @@ export async function loadCurrentPlayerIdentity(
     userId: data.user_id as string,
     role: data.role as PlayerRole,
     displayName: (data.display_name as string | null) ?? null,
+    activeBattleId: (data.active_battle_id as string | null) ?? null,
   }
 }
 
@@ -837,10 +1048,13 @@ export async function savePlayerDisplayName(
 
   const row = data as PlayerIdentityRpcRow
 
+  const current = await loadCurrentPlayerIdentity(roomId)
+
   return {
     userId: row.user_id,
     role: row.role,
     displayName: row.display_name,
+    activeBattleId: current.activeBattleId,
   }
 }
 
