@@ -1966,3 +1966,96 @@ h2 {
   line-height: 1.5;
   white-space: pre-wrap;
 }
+
+
+.character-editor__checkbox-row {
+  display: flex !important;
+  align-items: center;
+  align-self: end;
+  min-height: 36px;
+  gap: 7px !important;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.character-editor__checkbox-row input {
+  width: auto;
+  min-height: auto;
+  margin: 0;
+}
+
+.action-target-multi {
+  display: grid;
+  gap: 8px;
+}
+
+.action-target-multi__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.action-target-multi__header > span {
+  color: #d5d1dd;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.action-target-multi__header small {
+  color: #989cad;
+  font-size: 0.72rem;
+}
+
+.action-target-multi__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.action-target-multi__options label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 7px;
+  row-gap: 2px;
+  min-height: 44px;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+
+.action-target-multi__options label:has(input:checked) {
+  border-color: rgba(190, 164, 246, 0.34);
+  background: rgba(190, 164, 246, 0.09);
+}
+
+.action-target-multi__options input {
+  grid-row: span 2;
+  margin: 0;
+}
+
+.action-target-multi__options span {
+  color: #d8d4e0;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.action-target-multi__options small {
+  color: #8f93a8;
+  font-size: 0.68rem;
+}
+
+@media (max-width: 620px) {
+  .action-target-multi__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .action-target-multi__options {
+    grid-template-columns: 1fr;
+  }
+}
