@@ -83,6 +83,29 @@ export async function createCharacterRecord(input: {
   }
 }
 
+export async function updateCharacterRecord(input: {
+  characterId: string
+  name: string
+  sourceData: Record<string, unknown>
+  combatProfile: NormalizedCombatProfile
+}) {
+  const { data, error } = await supabase
+    .rpc('update_character_record', {
+      p_character_id: input.characterId,
+      p_name: input.name,
+      p_source_data: input.sourceData,
+      p_combat_profile: input.combatProfile,
+    })
+    .single()
+
+  if (error) throw error
+
+  return data as {
+    character_id: string
+    character_name: string
+  }
+}
+
 export async function addCharacterToBattle(
   characterId: string,
   battleId: string,

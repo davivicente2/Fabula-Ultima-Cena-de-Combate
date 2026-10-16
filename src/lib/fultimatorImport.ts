@@ -6,6 +6,21 @@ import type {
   StatusEffect,
 } from '../types/combat'
 
+export type NormalizedCombatAbility = {
+  name: string
+  effectType: 'damage' | 'heal' | 'status'
+  targetRelation: 'enemy' | 'ally'
+  checkAttributeA: AttributeName
+  checkAttributeB: AttributeName
+  checkBonus: number
+  mpCost: number
+  damageBonus: number
+  damageType: DamageType | null
+  healAmount: number
+  statusEffect: StatusEffect | null
+  sortOrder: number
+}
+
 export type NormalizedCombatAttack = {
   name: string
   accuracyAttributeA: AttributeName
@@ -32,6 +47,7 @@ export type NormalizedCombatProfile = {
   statuses: StatusEffect[]
   affinities: Partial<Record<DamageType, DamageAffinity>>
   attacks: NormalizedCombatAttack[]
+  abilities?: NormalizedCombatAbility[]
 }
 
 export type FultimatorImport = {
@@ -396,6 +412,7 @@ export function importFultimatorCharacter(value: unknown): FultimatorImport {
       statuses: normalizeStatuses(value),
       affinities: normalizeAffinities(value),
       attacks: normalizeAttacks(value),
+      abilities: [],
     },
     warnings,
   }
