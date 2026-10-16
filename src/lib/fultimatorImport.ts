@@ -1,4 +1,7 @@
 import type {
+  AbilityCheckDefense,
+  AbilityEffectType,
+  AbilityTargetRelation,
   AttributeName,
   DamageAffinity,
   DamageType,
@@ -8,8 +11,8 @@ import type {
 
 export type NormalizedCombatAbility = {
   name: string
-  effectType: 'damage' | 'heal' | 'status'
-  targetRelation: 'enemy' | 'ally'
+  effectType: AbilityEffectType
+  targetRelation: AbilityTargetRelation
   checkAttributeA: AttributeName
   checkAttributeB: AttributeName
   checkBonus: number
@@ -18,6 +21,8 @@ export type NormalizedCombatAbility = {
   damageType: DamageType | null
   healAmount: number
   statusEffect: StatusEffect | null
+  description?: string | null
+  checkDefense?: AbilityCheckDefense
   sortOrder: number
 }
 
