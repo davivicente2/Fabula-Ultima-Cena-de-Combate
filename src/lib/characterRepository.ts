@@ -106,6 +106,75 @@ export async function updateCharacterRecord(input: {
   }
 }
 
+export async function removeCharacterFromScene(characterId: string) {
+  const { data, error } = await supabase
+    .rpc('remove_character_from_scene', {
+      p_character_id: characterId,
+    })
+    .single()
+
+  if (error) throw error
+
+  return data as {
+    character_id: string
+    character_name: string
+  }
+}
+
+export async function deleteCharacterRecord(characterId: string) {
+  const { data, error } = await supabase
+    .rpc('delete_character_record', {
+      p_character_id: characterId,
+    })
+    .single()
+
+  if (error) throw error
+
+  return data as {
+    character_id: string
+    character_name: string
+  }
+}
+
+export async function duplicateCharacterRecord(
+  characterId: string,
+  name?: string | null,
+) {
+  const { data, error } = await supabase
+    .rpc('duplicate_character_record', {
+      p_character_id: characterId,
+      p_name: name ?? null,
+    })
+    .single()
+
+  if (error) throw error
+
+  return data as {
+    character_id: string
+    character_name: string
+  }
+}
+
+export async function duplicateCharacterToBattle(
+  characterId: string,
+  battleId: string,
+) {
+  const { data, error } = await supabase
+    .rpc('duplicate_character_to_battle', {
+      p_character_id: characterId,
+      p_battle_id: battleId,
+    })
+    .single()
+
+  if (error) throw error
+
+  return data as {
+    character_id: string
+    combatant_id: string
+    character_name: string
+  }
+}
+
 export async function addCharacterToBattle(
   characterId: string,
   battleId: string,
