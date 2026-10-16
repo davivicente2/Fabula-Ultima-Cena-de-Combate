@@ -188,7 +188,6 @@ export function subscribeToSceneClocks(
         event: '*',
         schema: 'public',
         table: 'scene_clocks',
-        filter: `battle_id=eq.${battleId}`,
       },
       refresh,
     )
