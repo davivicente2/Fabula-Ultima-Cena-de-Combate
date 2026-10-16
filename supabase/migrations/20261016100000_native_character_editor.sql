@@ -3,6 +3,13 @@
 -- character also refreshes its current scene representation when no conflict
 -- is active.
 
+-- PR #19 was an experimental Fultimator spell importer. If its migration was
+-- manually applied during testing, retire its insert trigger so the native
+-- editor remains the single source of combat abilities. The experimental
+-- functions/columns can remain harmlessly until that feature is redesigned.
+drop trigger if exists seed_imported_spells_after_combatant_insert
+  on public.combatants;
+
 create or replace function private.seed_profile_abilities(
   p_combatant_id uuid,
   p_profile jsonb
